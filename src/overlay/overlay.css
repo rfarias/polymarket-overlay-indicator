@@ -1,0 +1,48 @@
+#aggressive-edge-overlay {
+  position: fixed;
+  top: 88px;
+  right: 18px;
+  width: 315px;
+  background: rgba(17, 24, 39, 0.92);
+  color: #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  z-index: 999999;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+#aggressive-edge-overlay .head {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-weight: 700;
+  letter-spacing: .4px;
+}
+
+#aggressive-edge-overlay .score {
+  font-size: 24px;
+  font-weight: 800;
+}
+
+#aggressive-edge-overlay .body {
+  padding: 10px 12px;
+}
+
+#aggressive-edge-overlay .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+#aggressive-edge-overlay .yes { color: #22c55e; }
+#aggressive-edge-overlay .no { color: #ef4444; }
+#aggressive-edge-overlay .attention { color: #facc15; }
+#aggressive-edge-overlay .warning { color: #fb923c; }
+#aggressive-edge-overlay .danger { color: #ef4444; }
+#aggressive-edge-overlay .good { color: #22c55e; }
+#aggressive-edge-overlay .muted { color: #9ca3af; }
+#aggressive-edge-overlay .sep { height: 1px; background: rgba(255,255,255,.1); margin: 8px 0; }
+#aggressive-edge-overlay .title { font-weight: 700; font-size: 11px; color: #cbd5e1; margin-bottom: 6px; }
