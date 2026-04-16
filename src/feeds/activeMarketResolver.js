@@ -5,8 +5,8 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-function buildSearchText(payload = {}) {
-  return [
+function containsBtcLabel(payload) {
+  const fields = [
     payload?.market,
     payload?.market_slug,
     payload?.slug,
@@ -19,15 +19,8 @@ function buildSearchText(payload = {}) {
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
-}
 
-function containsBtcLabel(payload) {
-  const fields = buildSearchText(payload);
   return BTC_KEYWORDS.some((k) => fields.includes(k));
-}
-
-export function marketSearchText(payload = {}) {
-  return buildSearchText(payload);
 }
 
 export function inferEventType(payload = {}) {

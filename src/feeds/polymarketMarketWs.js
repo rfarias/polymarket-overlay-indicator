@@ -3,7 +3,6 @@ import WebSocket from 'ws';
 import {
   extractMarketId,
   inferEventType,
-  marketSearchText,
   normalizeOrderbook,
   normalizeTrade,
   resolveExpiry,
@@ -27,7 +26,6 @@ export class PolymarketMarketFeed extends EventEmitter {
     this.debug = debug;
     this.ws = null;
     this.activeMarketId = null;
-    this.preferredHint = '';
     this.meta = {};
     this.reconnectTimer = null;
   }
@@ -68,16 +66,6 @@ export class PolymarketMarketFeed extends EventEmitter {
     );
   }
 
-  setPreferredHint(hint = '') {
-    this.preferredHint = String(hint || '').toLowerCase().trim();
-    if (!this.preferredHint) return;
-
-    const found = Object.entries(this.meta).find(([_, meta]) => meta.isBtc && meta.searchText?.includes(this.preferredHint));
-    if (found?.[0]) {
-      this.setActiveMarket(found[0]);
-    }
-  }
-
   scheduleReconnect() {
     if (this.reconnectTimer) return;
     this.emit('status', { feed: 'market', ok: false, ts: Date.now() });
@@ -103,19 +91,15 @@ export class PolymarketMarketFeed extends EventEmitter {
 
     if (marketId) {
       const old = this.meta[marketId] || {};
-      const searchText = `${old.searchText || ''} ${marketSearchText(payload)}`.trim();
       this.meta[marketId] = {
         ...old,
         targetPrice: resolveTargetPrice(payload) ?? old.targetPrice ?? null,
         expiryTs: resolveExpiry(payload) ?? old.expiryTs ?? null,
         isBtc: shouldTrackAsBtc(payload) || old.isBtc || false,
-        searchText,
         updatedAt: Date.now()
       };
 
-      if (this.preferredHint && this.meta[marketId].searchText.includes(this.preferredHint)) {
-        this.setActiveMarket(marketId);
-      } else if (!this.activeMarketId && this.meta[marketId].isBtc) {
+      if (!this.activeMarketId && this.meta[marketId].isBtc) {
         this.setActiveMarket(marketId);
       }
     }

@@ -17,7 +17,7 @@ Projeto local e independente para leitura agressiva da **direção provável das
   - Faz log NDJSON em `logs/edge-signals.ndjson`
 
 - **Overlay Tampermonkey** (`src/overlay/overlay.js`)
-  - Painel flutuante na Polymarket (arrastável)
+  - Painel flutuante na Polymarket
   - Atualização contínua via API local
   - Exibição de score, direção, confiança, entrada/saída, reversão
 
@@ -97,7 +97,6 @@ Servidor local:
 - `http://localhost:8787/api/health`
 - `http://localhost:8787/api/edge`
 - `POST http://localhost:8787/api/ui-price` (captura de preço do DOM via overlay)
-- `POST http://localhost:8787/api/ui-context` (contexto da tela aberta para priorizar mercado)
 
 
 ## Latency / Delta Monitor
