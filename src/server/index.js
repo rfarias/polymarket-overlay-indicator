@@ -6,6 +6,7 @@ import { WebSocketServer } from 'ws';
 import { PolymarketMarketFeed } from '../feeds/polymarketMarketWs.js';
 import { PolymarketRtdsFeed } from '../feeds/polymarketRtdsWs.js';
 import { ExternalPriceFeed } from '../feeds/externalPriceWs.js';
+import { resolvePageMarket } from '../feeds/polymarketGamma.js';
 import { RuntimeState } from './state.js';
 
 const PORT = Number(process.env.PORT || 8787);
@@ -60,6 +61,17 @@ app.post('/api/ui-context', (req, res) => {
   if (hint) {
     marketFeed.setPreferredHint(hint);
   }
+  resolvePageMarket({ pageUrl, marketHint: hint })
+    .then((market) => {
+      if (market?.marketId && market.assetIds?.length) {
+        state.setMarket(market.marketId, market.meta);
+        marketFeed.setTrackedMarket(market);
+        broadcast();
+      }
+    })
+    .catch((error) => {
+      console.warn('[ui-context] market resolution failed:', error.message);
+    });
 
   res.json({ ok: true, hint });
 });

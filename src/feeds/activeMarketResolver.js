@@ -35,16 +35,16 @@ export function inferEventType(payload = {}) {
 }
 
 export function extractMarketId(payload = {}) {
-  return payload.market_id || payload.market || payload.condition_id || payload.id || null;
+  return payload.market_id || payload.market || payload.condition_id || payload.conditionId || payload.id || null;
 }
 
 export function resolveTargetPrice(payload = {}) {
-  const raw = payload.target_price || payload.strike || payload.reference_price || payload.threshold;
+  const raw = payload.target_price || payload.strike || payload.reference_price || payload.threshold || payload.line || payload.groupItemThreshold;
   return toNumber(raw);
 }
 
 export function resolveExpiry(payload = {}) {
-  const raw = payload.end_ts || payload.expiry || payload.end_time || payload.closes_at;
+  const raw = payload.end_ts || payload.expiry || payload.end_time || payload.closes_at || payload.endDate || payload.end_date || payload.game_start_time;
   const parsed = raw ? new Date(raw).getTime() : null;
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -54,6 +54,37 @@ export function shouldTrackAsBtc(payload = {}) {
 }
 
 export function normalizeOrderbook(raw = {}) {
+  if (raw.best_bid || raw.best_ask) {
+    const bestBid = toNumber(raw.best_bid);
+    const bestAsk = toNumber(raw.best_ask);
+    return {
+      bids: bestBid ? [{ price: bestBid, size: 1 }] : [],
+      asks: bestAsk ? [{ price: bestAsk, size: 1 }] : []
+    };
+  }
+
+  if (Array.isArray(raw.price_changes) && raw.price_changes.length > 0) {
+    const bids = raw.price_changes
+      .filter((level) => String(level.side || '').toUpperCase() === 'BUY')
+      .map((level) => ({
+        price: toNumber(level.best_bid ?? level.price) ?? 0,
+        size: toNumber(level.size) ?? 0
+      }))
+      .filter((level) => level.price > 0)
+      .sort((a, b) => b.price - a.price);
+
+    const asks = raw.price_changes
+      .filter((level) => String(level.side || '').toUpperCase() === 'SELL')
+      .map((level) => ({
+        price: toNumber(level.best_ask ?? level.price) ?? 0,
+        size: toNumber(level.size) ?? 0
+      }))
+      .filter((level) => level.price > 0)
+      .sort((a, b) => a.price - b.price);
+
+    return { bids, asks };
+  }
+
   const normalizeSide = (arr = []) => arr
     .map((l) => ({
       price: toNumber(l.price ?? l.p ?? l[0]) ?? 0,

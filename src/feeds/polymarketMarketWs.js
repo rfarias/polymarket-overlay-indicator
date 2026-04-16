@@ -29,7 +29,10 @@ export class PolymarketMarketFeed extends EventEmitter {
     this.activeMarketId = null;
     this.preferredHint = '';
     this.meta = {};
+    this.activeAssetIds = [];
+    this.currentSubscription = [];
     this.reconnectTimer = null;
+    this.pingTimer = null;
   }
 
   connect() {
@@ -37,11 +40,9 @@ export class PolymarketMarketFeed extends EventEmitter {
 
     this.ws.on('open', () => {
       this.emit('status', { feed: 'market', ok: true, ts: Date.now() });
-
-      if (this.explicitMarketIds.length > 0) {
-        this.subscribe(this.explicitMarketIds);
-      } else {
-        this.ws.send(JSON.stringify({ type: 'subscribe', channel: 'market' }));
+      this.startHeartbeat();
+      if (this.activeAssetIds.length > 0) {
+        this.subscribe(this.activeAssetIds);
       }
     });
 
@@ -56,16 +57,35 @@ export class PolymarketMarketFeed extends EventEmitter {
   }
 
   subscribe(marketIds) {
-    const unique = [...new Set(marketIds.filter(Boolean))];
+    const unique = [...new Set(marketIds.filter(Boolean).map(String))];
     if (!unique.length || this.ws?.readyState !== WebSocket.OPEN) return;
 
+    this.currentSubscription = unique;
     this.ws.send(
       JSON.stringify({
-        type: 'subscribe',
-        channel: 'market',
-        market_ids: unique
+        type: 'market',
+        assets_ids: unique,
+        custom_feature_enabled: true
       })
     );
+  }
+
+  setTrackedMarket({ marketId, assetIds = [], meta = {} }) {
+    const nextAssetIds = [...new Set(assetIds.filter(Boolean).map(String))];
+    if (marketId) {
+      this.activeMarketId = marketId;
+      this.meta[marketId] = { ...this.meta[marketId], ...meta, updatedAt: Date.now() };
+      this.emit('market:selected', { marketId, meta: this.meta[marketId] });
+    }
+
+    if (!nextAssetIds.length) return;
+
+    const changed = nextAssetIds.join(',') !== this.activeAssetIds.join(',');
+    this.activeAssetIds = nextAssetIds;
+
+    if (this.ws?.readyState === WebSocket.OPEN && changed) {
+      this.subscribe(this.activeAssetIds);
+    }
   }
 
   setPreferredHint(hint = '') {
@@ -79,6 +99,9 @@ export class PolymarketMarketFeed extends EventEmitter {
   }
 
   scheduleReconnect() {
+    clearInterval(this.pingTimer);
+    this.pingTimer = null;
+
     if (this.reconnectTimer) return;
     this.emit('status', { feed: 'market', ok: false, ts: Date.now() });
 
@@ -97,13 +120,23 @@ export class PolymarketMarketFeed extends EventEmitter {
     }
   }
 
+  startHeartbeat() {
+    clearInterval(this.pingTimer);
+    this.pingTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send('PING');
+      }
+    }, 10000);
+  }
+
   handleMessage(payload) {
     const eventType = inferEventType(payload);
     const marketId = extractMarketId(payload);
 
     if (marketId) {
       const old = this.meta[marketId] || {};
-      const searchText = `${old.searchText || ''} ${marketSearchText(payload)}`.trim();
+      const incomingSearchText = marketSearchText(payload);
+      const searchText = old.searchText || incomingSearchText;
       this.meta[marketId] = {
         ...old,
         targetPrice: resolveTargetPrice(payload) ?? old.targetPrice ?? null,
@@ -118,10 +151,6 @@ export class PolymarketMarketFeed extends EventEmitter {
       } else if (!this.activeMarketId && this.meta[marketId].isBtc) {
         this.setActiveMarket(marketId);
       }
-    }
-
-    if (!this.activeMarketId && this.explicitMarketIds.length) {
-      this.setActiveMarket(this.explicitMarketIds[0]);
     }
 
     const activeId = this.activeMarketId;

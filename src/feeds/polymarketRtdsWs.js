@@ -16,6 +16,7 @@ export class PolymarketRtdsFeed extends EventEmitter {
     this.debug = debug;
     this.ws = null;
     this.reconnectTimer = null;
+    this.pingTimer = null;
   }
 
   connect() {
@@ -23,23 +24,33 @@ export class PolymarketRtdsFeed extends EventEmitter {
 
     this.ws.on('open', () => {
       this.emit('status', { feed: 'rtds', ok: true, ts: Date.now() });
-      this.ws.send(JSON.stringify({ type: 'subscribe', channels: ['price'] }));
+      this.startHeartbeat();
+      this.ws.send(JSON.stringify({
+        action: 'subscribe',
+        subscriptions: [
+          { topic: 'crypto_prices', type: 'update' }
+        ]
+      }));
     });
 
     this.ws.on('message', (data) => {
-      const payload = parseJsonSafe(data.toString());
-      if (!payload) return;
+      const raw = data.toString();
+      if (raw === 'PONG' || raw === 'PING') return;
 
-      const symbol = String(payload.symbol || payload.asset || payload.pair || '').toUpperCase();
-      if (!symbol.includes('BTC') && !payload.btc_price && !payload.price_btc) return;
+      const message = parseJsonSafe(raw);
+      if (!message) return;
 
-      const price = Number(payload.price ?? payload.btc_price ?? payload.price_btc ?? payload.value);
+      const payload = message.payload || message;
+      const symbol = String(payload.symbol || '').toLowerCase();
+      if (!symbol.includes('btc')) return;
+
+      const price = Number(payload.value ?? payload.price ?? payload.btc_price ?? payload.price_btc);
       if (!Number.isFinite(price) || price <= 0) return;
 
       this.emit('btc', {
         price,
-        ts: Date.now(),
-        raw: payload
+        ts: Number(payload.timestamp) || Number(message.timestamp) || Date.now(),
+        raw: message
       });
 
       if (this.debug) console.log('[rtds] btc:', price);
@@ -49,7 +60,19 @@ export class PolymarketRtdsFeed extends EventEmitter {
     this.ws.on('error', () => this.scheduleReconnect());
   }
 
+  startHeartbeat() {
+    clearInterval(this.pingTimer);
+    this.pingTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send('PING');
+      }
+    }, 5000);
+  }
+
   scheduleReconnect() {
+    clearInterval(this.pingTimer);
+    this.pingTimer = null;
+
     if (this.reconnectTimer) return;
     this.emit('status', { feed: 'rtds', ok: false, ts: Date.now() });
 
