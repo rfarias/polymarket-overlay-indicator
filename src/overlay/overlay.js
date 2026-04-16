@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Polymarket Aggressive Edge Overlay
 // @namespace    local.polymarket.edge
-// @version      0.3.0
+// @version      0.2.0
 // @description  Overlay local com score agressivo + monitor de latency/delta
 // @match        https://polymarket.com/*
 // @grant        GM_addStyle
@@ -11,14 +11,10 @@
 
 (function () {
   const API = 'http://localhost:8787/api/edge';
-  const WS_API = 'ws://localhost:8787/ws/edge';
   const UI_POST_API = 'http://localhost:8787/api/ui-price';
-  const UI_CONTEXT_API = 'http://localhost:8787/api/ui-context';
-  const POLL_MS = 700;
-  const POS_KEY = 'aggressive_edge_overlay_pos_v1';
-
+  const POLL_MS = 500;
   const CSS = `
-${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:315px;background:rgba(17,24,39,.92);color:#e5e7eb;border:1px solid rgba(255,255,255,.12);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.45);z-index:999999;font-family:Inter,system-ui,sans-serif;font-size:12px;line-height:1.45}#aggressive-edge-overlay .head{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.1);font-weight:700;letter-spacing:.4px;cursor:move;user-select:none}#aggressive-edge-overlay .body{padding:10px 12px}#aggressive-edge-overlay .score{font-size:24px;font-weight:800}#aggressive-edge-overlay .row{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px}#aggressive-edge-overlay .yes{color:#22c55e}#aggressive-edge-overlay .no{color:#ef4444}#aggressive-edge-overlay .attention{color:#facc15}#aggressive-edge-overlay .warning{color:#fb923c}#aggressive-edge-overlay .danger{color:#ef4444}#aggressive-edge-overlay .good{color:#22c55e}#aggressive-edge-overlay .muted{color:#9ca3af}#aggressive-edge-overlay .sep{height:1px;background:rgba(255,255,255,.1);margin:8px 0}#aggressive-edge-overlay .title{font-weight:700;font-size:11px;color:#cbd5e1;margin-bottom:6px}`}
+${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:315px;background:rgba(17,24,39,.92);color:#e5e7eb;border:1px solid rgba(255,255,255,.12);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.45);z-index:999999;font-family:Inter,system-ui,sans-serif;font-size:12px;line-height:1.45}#aggressive-edge-overlay .head{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.1);font-weight:700;letter-spacing:.4px}#aggressive-edge-overlay .body{padding:10px 12px}#aggressive-edge-overlay .score{font-size:24px;font-weight:800}#aggressive-edge-overlay .row{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px}#aggressive-edge-overlay .yes{color:#22c55e}#aggressive-edge-overlay .no{color:#ef4444}#aggressive-edge-overlay .attention{color:#facc15}#aggressive-edge-overlay .warning{color:#fb923c}#aggressive-edge-overlay .danger{color:#ef4444}#aggressive-edge-overlay .good{color:#22c55e}#aggressive-edge-overlay .muted{color:#9ca3af}#aggressive-edge-overlay .sep{height:1px;background:rgba(255,255,255,.1);margin:8px 0}#aggressive-edge-overlay .title{font-weight:700;font-size:11px;color:#cbd5e1;margin-bottom:6px}`}
   `;
 
   const styleInjector = typeof GM_addStyle === 'function'
@@ -37,55 +33,6 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
 
   let lastUiPrice = null;
   let lastUiUpdatedAt = 0;
-  let ws;
-
-  function loadPosition() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(POS_KEY) || '{}');
-      if (Number.isFinite(saved.left)) root.style.left = `${saved.left}px`;
-      if (Number.isFinite(saved.top)) root.style.top = `${saved.top}px`;
-      if (Number.isFinite(saved.left)) root.style.right = 'auto';
-    } catch {}
-  }
-
-  function savePosition(left, top) {
-    localStorage.setItem(POS_KEY, JSON.stringify({ left, top }));
-  }
-
-  function enableDrag() {
-    const head = root.querySelector('.head');
-    let dragging = false;
-    let startX = 0;
-    let startY = 0;
-    let baseLeft = 0;
-    let baseTop = 0;
-
-    head.addEventListener('mousedown', (e) => {
-      dragging = true;
-      const rect = root.getBoundingClientRect();
-      startX = e.clientX;
-      startY = e.clientY;
-      baseLeft = rect.left;
-      baseTop = rect.top;
-      root.style.left = `${baseLeft}px`;
-      root.style.top = `${baseTop}px`;
-      root.style.right = 'auto';
-      e.preventDefault();
-    });
-
-    window.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-      const nextLeft = Math.max(0, Math.min(window.innerWidth - root.offsetWidth, baseLeft + (e.clientX - startX)));
-      const nextTop = Math.max(0, Math.min(window.innerHeight - root.offsetHeight, baseTop + (e.clientY - startY)));
-      root.style.left = `${nextLeft}px`;
-      root.style.top = `${nextTop}px`;
-      savePosition(nextLeft, nextTop);
-    });
-
-    window.addEventListener('mouseup', () => {
-      dragging = false;
-    });
-  }
 
   function row(label, value, css = '') {
     return `<div class="row"><span class="muted">${label}</span><span class="${css}">${value ?? '-'}</span></div>`;
@@ -103,29 +50,12 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
     return `${Math.round(ms)}ms`;
   }
 
-  function sendJson(url, payload) {
-    if (typeof GM_xmlhttpRequest === 'function') {
-      GM_xmlhttpRequest({
-        method: 'POST',
-        url,
-        headers: { 'Content-Type': 'application/json' },
-        data: JSON.stringify(payload)
-      });
-      return;
-    }
-
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).catch(() => {});
-  }
-
   function findUiBtcPrice() {
-    const candidates = [...document.querySelectorAll('span,div,p')].slice(0, 300);
+    // Captura heurística de preço no DOM sem ser fonte operacional.
+    const candidates = [...document.querySelectorAll('span,div,p')].slice(0, 220);
     for (const el of candidates) {
       const text = (el.textContent || '').trim();
-      if (!text || text.length > 28) continue;
+      if (!text || text.length > 24) continue;
       const clean = text.replace(/[$,\s]/g, '');
       if (!/^\d{4,7}(\.\d+)?$/.test(clean)) continue;
       const value = Number(clean);
@@ -136,11 +66,24 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
     return null;
   }
 
-  function sendUiContext() {
-    sendJson(UI_CONTEXT_API, {
-      pageUrl: window.location.href,
-      marketHint: document.title
-    });
+  function postUiPrice(uiPrice, uiUpdatedAt) {
+    const payload = JSON.stringify({ uiPrice, uiUpdatedAt });
+
+    if (typeof GM_xmlhttpRequest === 'function') {
+      GM_xmlhttpRequest({
+        method: 'POST',
+        url: UI_POST_API,
+        headers: { 'Content-Type': 'application/json' },
+        data: payload
+      });
+      return;
+    }
+
+    fetch(UI_POST_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload
+    }).catch(() => {});
   }
 
   function trackDomUiPrice() {
@@ -149,7 +92,7 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
     if (lastUiPrice === null || Math.abs(value - lastUiPrice) >= 0.01) {
       lastUiPrice = value;
       lastUiUpdatedAt = Date.now();
-      sendJson(UI_POST_API, { uiPrice: lastUiPrice, uiUpdatedAt: lastUiUpdatedAt });
+      postUiPrice(lastUiPrice, lastUiUpdatedAt);
     }
   }
 
@@ -209,6 +152,24 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
   }
 
   function requestEdge() {
+    if (typeof GM_xmlhttpRequest === 'function') {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: API,
+        onload: (res) => {
+          try {
+            render(JSON.parse(res.responseText));
+          } catch {
+            root.querySelector('.body').innerHTML = '<div class="attention">Falha ao ler API local.</div>';
+          }
+        },
+        onerror: () => {
+          root.querySelector('.body').innerHTML = '<div class="attention">Backend offline.</div>';
+        }
+      });
+      return;
+    }
+
     fetch(API)
       .then((r) => r.json())
       .then(render)
@@ -217,38 +178,13 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
       });
   }
 
-  function connectRealtime() {
-    try {
-      ws = new WebSocket(WS_API);
-      ws.onmessage = (ev) => {
-        try {
-          render(JSON.parse(ev.data));
-        } catch {}
-      };
-      ws.onclose = () => setTimeout(connectRealtime, 1500);
-      ws.onerror = () => {
-        try { ws.close(); } catch {}
-      };
-    } catch {
-      setTimeout(connectRealtime, 1500);
-    }
-  }
-
-  const observer = new MutationObserver(() => {
-    trackDomUiPrice();
-  });
+  const observer = new MutationObserver(trackDomUiPrice);
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-  loadPosition();
-  enableDrag();
-  sendUiContext();
-  connectRealtime();
   trackDomUiPrice();
   requestEdge();
-
   setInterval(() => {
     trackDomUiPrice();
-    sendUiContext();
     requestEdge();
   }, POLL_MS);
 })();

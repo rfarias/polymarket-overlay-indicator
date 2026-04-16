@@ -20,14 +20,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const marketFeed = new PolymarketMarketFeed({
-  wsUrl: MARKET_WS_URL,
-  explicitMarketIds: MARKET_IDS,
-  debug: DEBUG_FEEDS
-});
-const rtdsFeed = new PolymarketRtdsFeed({ wsUrl: RTDS_WS_URL, debug: DEBUG_FEEDS });
-const externalFeed = new ExternalPriceFeed({ wsUrl: EXTERNAL_WS_URL, enabled: Boolean(EXTERNAL_WS_URL), debug: DEBUG_FEEDS });
-
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, ...state.snapshot() });
 });
@@ -48,20 +40,6 @@ app.post('/api/ui-price', (req, res) => {
   state.updateUiPrice(uiPrice, uiUpdatedAt);
   broadcast();
   res.json({ ok: true });
-});
-
-app.post('/api/ui-context', (req, res) => {
-  const pageUrl = String(req.body?.pageUrl || '').toLowerCase();
-  const marketHint = String(req.body?.marketHint || '').toLowerCase();
-
-  const slugFromUrl = pageUrl.split('/').filter(Boolean).slice(-1)[0] || '';
-  const hint = marketHint || slugFromUrl;
-
-  if (hint) {
-    marketFeed.setPreferredHint(hint);
-  }
-
-  res.json({ ok: true, hint });
 });
 
 app.get('/overlay/user.js', (_req, res) => {
@@ -86,6 +64,14 @@ function broadcast() {
     if (client.readyState === 1) client.send(payload);
   });
 }
+
+const marketFeed = new PolymarketMarketFeed({
+  wsUrl: MARKET_WS_URL,
+  explicitMarketIds: MARKET_IDS,
+  debug: DEBUG_FEEDS
+});
+const rtdsFeed = new PolymarketRtdsFeed({ wsUrl: RTDS_WS_URL, debug: DEBUG_FEEDS });
+const externalFeed = new ExternalPriceFeed({ wsUrl: EXTERNAL_WS_URL, enabled: Boolean(EXTERNAL_WS_URL), debug: DEBUG_FEEDS });
 
 marketFeed.on('status', ({ ok }) => state.setStatus('market', ok));
 rtdsFeed.on('status', ({ ok }) => state.setStatus('rtds', ok));
