@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
+import { fileURLToPath } from 'node:url';
 
 import { PolymarketMarketFeed } from '../feeds/polymarketMarketWs.js';
 import { PolymarketRtdsFeed } from '../feeds/polymarketRtdsWs.js';
@@ -66,12 +67,12 @@ app.post('/api/ui-context', (req, res) => {
 
 app.get('/overlay/user.js', (_req, res) => {
   res.type('application/javascript');
-  res.sendFile(new URL('../overlay/overlay.js', import.meta.url).pathname);
+  res.sendFile(fileURLToPath(new URL('../overlay/overlay.js', import.meta.url)));
 });
 
 app.get('/overlay/overlay.css', (_req, res) => {
   res.type('text/css');
-  res.sendFile(new URL('../overlay/overlay.css', import.meta.url).pathname);
+  res.sendFile(fileURLToPath(new URL('../overlay/overlay.css', import.meta.url)));
 });
 
 const server = app.listen(PORT, () => {

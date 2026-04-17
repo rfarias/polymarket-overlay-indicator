@@ -1,12 +1,17 @@
 // ==UserScript==
 // @name         Polymarket Aggressive Edge Overlay
 // @namespace    local.polymarket.edge
-// @version      0.3.1
-// @description  Overlay local com score agressivo + monitor de latency/delta
+// @version      0.3.3
+// @description  Overlay enxuto para entrada em mercados quase resolvidos
 // @match        https://polymarket.com/*
+// @match        https://www.polymarket.com/*
+// @match        https://*.polymarket.com/*
 // @grant        GM_addStyle
 // @grant        GM_xmlhttpRequest
+// @grant        GM.xmlHttpRequest
 // @connect      localhost
+// @connect      127.0.0.1
+// @run-at       document-idle
 // ==/UserScript==
 
 (function () {
@@ -18,28 +23,31 @@
   const POS_KEY = 'aggressive_edge_overlay_pos_v1';
 
   const CSS = `
-${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:315px;background:rgba(17,24,39,.92);color:#e5e7eb;border:1px solid rgba(255,255,255,.12);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.45);z-index:999999;font-family:Inter,system-ui,sans-serif;font-size:12px;line-height:1.45}#aggressive-edge-overlay .head{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.1);font-weight:700;letter-spacing:.4px;cursor:move;user-select:none}#aggressive-edge-overlay .body{padding:10px 12px}#aggressive-edge-overlay .score{font-size:24px;font-weight:800}#aggressive-edge-overlay .row{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px}#aggressive-edge-overlay .yes{color:#22c55e}#aggressive-edge-overlay .no{color:#ef4444}#aggressive-edge-overlay .attention{color:#facc15}#aggressive-edge-overlay .warning{color:#fb923c}#aggressive-edge-overlay .danger{color:#ef4444}#aggressive-edge-overlay .good{color:#22c55e}#aggressive-edge-overlay .muted{color:#9ca3af}#aggressive-edge-overlay .sep{height:1px;background:rgba(255,255,255,.1);margin:8px 0}#aggressive-edge-overlay .title{font-weight:700;font-size:11px;color:#cbd5e1;margin-bottom:6px}`}
+${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:348px;background:linear-gradient(180deg,rgba(15,23,42,.97),rgba(17,24,39,.94));color:#e5e7eb;border:1px solid rgba(148,163,184,.22);border-radius:14px;box-shadow:0 14px 45px rgba(0,0,0,.42);z-index:999999;font-family:Inter,system-ui,sans-serif;font-size:12px;line-height:1.45;backdrop-filter:blur(10px)}#aggressive-edge-overlay .head{padding:11px 13px;border-bottom:1px solid rgba(255,255,255,.08);font-weight:800;letter-spacing:.6px;cursor:move;user-select:none;display:flex;justify-content:space-between;gap:8px}#aggressive-edge-overlay .body{padding:12px 13px}#aggressive-edge-overlay .hero{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}#aggressive-edge-overlay .score{font-size:26px;font-weight:800;line-height:1}#aggressive-edge-overlay .badge{padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;background:rgba(148,163,184,.16)}#aggressive-edge-overlay .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;margin-bottom:10px}#aggressive-edge-overlay .card{padding:8px 9px;border:1px solid rgba(255,255,255,.06);border-radius:10px;background:rgba(255,255,255,.03)}#aggressive-edge-overlay .label{display:block;font-size:10px;font-weight:700;letter-spacing:.3px;color:#94a3b8;text-transform:uppercase;margin-bottom:3px}#aggressive-edge-overlay .value{display:block;font-size:15px;font-weight:700}#aggressive-edge-overlay .mini{font-size:11px;color:#cbd5e1}#aggressive-edge-overlay .row{display:flex;justify-content:space-between;gap:10px;margin-bottom:5px}#aggressive-edge-overlay .yes{color:#22c55e}#aggressive-edge-overlay .no{color:#ef4444}#aggressive-edge-overlay .attention{color:#facc15}#aggressive-edge-overlay .warning{color:#fb923c}#aggressive-edge-overlay .danger{color:#f87171}#aggressive-edge-overlay .good{color:#4ade80}#aggressive-edge-overlay .muted{color:#94a3b8}#aggressive-edge-overlay .sep{height:1px;background:rgba(255,255,255,.08);margin:9px 0}#aggressive-edge-overlay .title{font-weight:800;font-size:10px;color:#cbd5e1;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px}#aggressive-edge-overlay .footer{margin-top:8px;padding:9px 10px;border-radius:10px;background:rgba(15,118,110,.12);border:1px solid rgba(45,212,191,.15)}`}
   `;
-
-  const styleInjector = typeof GM_addStyle === 'function'
-    ? GM_addStyle
-    : (css) => {
-      const style = document.createElement('style');
-      style.textContent = css;
-      document.head.appendChild(style);
-    };
-  styleInjector(CSS);
-
-  const root = document.createElement('div');
-  root.id = 'aggressive-edge-overlay';
-  root.innerHTML = `<div class="head">AGGRESSIVE EDGE</div><div class="body"><div class="muted">Carregando dados locais...</div></div>`;
-  document.body.appendChild(root);
 
   let lastUiPrice = null;
   let lastUiUpdatedAt = 0;
   let ws;
+  let root = null;
+  let started = false;
+  let wsBlocked = false;
+
+  function getXmlHttpRequest() {
+    if (typeof GM_xmlhttpRequest === 'function') return GM_xmlhttpRequest;
+    if (typeof GM === 'object' && typeof GM.xmlHttpRequest === 'function') {
+      return GM.xmlHttpRequest.bind(GM);
+    }
+    return null;
+  }
+
+  function getAddStyle() {
+    if (typeof GM_addStyle === 'function') return GM_addStyle;
+    return null;
+  }
 
   function loadPosition() {
+    if (!root) return;
     try {
       const saved = JSON.parse(localStorage.getItem(POS_KEY) || '{}');
       if (Number.isFinite(saved.left)) root.style.left = `${saved.left}px`;
@@ -53,6 +61,7 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
   }
 
   function enableDrag() {
+    if (!root) return;
     const head = root.querySelector('.head');
     let dragging = false;
     let startX = 0;
@@ -91,6 +100,10 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
     return `<div class="row"><span class="muted">${label}</span><span class="${css}">${value ?? '-'}</span></div>`;
   }
 
+  function card(label, value, extra = '', css = '') {
+    return `<div class="card"><span class="label">${label}</span><span class="value ${css}">${value ?? '-'}</span>${extra ? `<span class="mini">${extra}</span>` : ''}</div>`;
+  }
+
   function fmtTime(sec = 0) {
     const m = String(Math.floor(sec / 60)).padStart(2, '0');
     const s = String(sec % 60).padStart(2, '0');
@@ -103,9 +116,15 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
     return `${Math.round(ms)}ms`;
   }
 
+  function fmtUsd(value, digits = 1) {
+    if (!Number.isFinite(value)) return '-';
+    return value.toFixed(digits);
+  }
+
   function sendJson(url, payload) {
-    if (typeof GM_xmlhttpRequest === 'function') {
-      GM_xmlhttpRequest({
+    const xhr = getXmlHttpRequest();
+    if (xhr) {
+      xhr({
         method: 'POST',
         url,
         headers: { 'Content-Type': 'application/json' },
@@ -162,55 +181,70 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
     return 'good';
   }
 
+  function riskTone(label) {
+    if (label === 'Alto') return 'danger';
+    if (label === 'Médio') return 'attention';
+    return 'good';
+  }
+
+  function safetyTone(label) {
+    if (label === 'Seguro') return 'good';
+    if (label === 'Observando') return 'attention';
+    return 'danger';
+  }
+
   function render(snapshot) {
+    if (!root) return;
     const edge = snapshot?.edge;
     const latencyDelta = snapshot?.latencyDelta;
 
     if (!edge) {
-      root.querySelector('.body').innerHTML = '<div class="attention">Sem score ainda.</div>';
+      root.querySelector('.body').innerHTML = '<div class="attention">Sem leitura ainda.</div>';
       return;
     }
 
-    const dirClass = edge.direction === 'YES' ? 'yes' : 'no';
-    const arrow = edge.direction === 'YES' ? '↑' : '↓';
-
+    const dirClass = edge.direction === 'YES' ? 'yes' : edge.direction === 'NO' ? 'no' : 'attention';
+    const delayTone = Number.isFinite(edge.gapToFair) && Math.abs(edge.gapToFair) >= 1.4 ? 'attention' : 'muted';
+    const entryCss = edge.entryPlan?.safeToEnter ? 'good' : 'warning';
     const lagLabel = latencyDelta?.uiLagStatus === 'high' ? 'UI atrasada' : latencyDelta?.uiLagStatus === 'medium' ? 'UI com leve atraso' : 'UI alinhada';
-    const conflictLabel = latencyDelta?.sourceConflict === 'high' ? 'alto' : latencyDelta?.sourceConflict === 'medium' ? 'médio' : 'baixo';
+    const fairOddsText = Number.isFinite(edge.fairOdds) ? `${edge.fairOdds.toFixed(1)}%` : '-';
+    const marketOddsText = Number.isFinite(edge.marketOdds) ? `${edge.marketOdds.toFixed(1)}%` : '-';
+    const gapText = Number.isFinite(edge.gapToFair) ? `${edge.gapToFair >= 0 ? '+' : ''}${edge.gapToFair.toFixed(1)} pts` : '-';
+    const targetPctText = Number.isFinite(edge.targetDistancePct) ? `${edge.targetDistancePct >= 0 ? '+' : ''}${edge.targetDistancePct.toFixed(3)}%` : '-';
 
     root.querySelector('.body').innerHTML = [
-      `<div class="score ${dirClass}">Score: ${edge.score}</div>`,
-      row('Score ajustado', edge.adjustedScore, 'attention'),
-      row('Direção', `${arrow} ${edge.direction}`, dirClass),
-      row('Confiança', `${edge.adjustedConfidence} (${edge.confidenceAdjustment >= 0 ? '+' : ''}${edge.confidenceAdjustment})`),
-      row('Momentum', edge.momentumStrength),
-      row('Book imbalance', edge.bookBias),
-      row('Trade pressure', edge.tradeBias),
-      row('Distância target', edge.targetDistance),
-      row('Tempo restante', fmtTime(edge.remainingTimeSec)),
-      row('Entrada ideal', edge.entryIdeal),
-      row('Saída curta', edge.shortExit),
-      row('Late entry >', String(edge.lateEntryAbove), 'attention'),
-      row('Risco reversão', edge.reversalRisk, edge.reversalRisk === 'Alto' ? 'attention' : ''),
-      row('Faixa', edge.band),
+      `<div class="hero"><div><div class="score ${dirClass}">${edge.directionLabel}</div><div class="mini">Entrada: <span class="${safetyTone(edge.safety)}">${edge.safety}</span></div></div><div class="badge ${safetyTone(edge.safety)}">${edge.score}/100</div></div>`,
+      '<div class="grid">',
+      card('Preço API', fmtUsd(edge.referencePrice), edge.referenceSource),
+      card('Mercado', marketOddsText, 'Polymarket implícito'),
+      card('Odds justas', fairOddsText, `delay ${gapText}`, delayTone),
+      card('Target', fmtUsd(edge.targetDistanceAbs), targetPctText),
+      '</div>',
+      row('Risco de reversão', edge.reversalRisk, riskTone(edge.reversalRisk)),
+      row('Volatilidade 10-15s', `${edge.volatility} (${edge.volatilityPct?.toFixed?.(3) ?? '-'}%)`, edge.volatility === 'Alta' ? 'danger' : edge.volatility === 'Média' ? 'attention' : 'good'),
+      row('Book', edge.bookBias),
+      row('Fluxo', edge.tradeBias),
+      row('Tempo para fechar', fmtTime(edge.remainingTimeSec), edge.remainingTimeSec <= 20 ? 'warning' : 'muted'),
+      row('Status do delay', lagLabel, latencyTone(latencyDelta)),
       '<div class="sep"></div>',
-      '<div class="title">LATENCY / DELTA</div>',
-      row('UI', latencyDelta?.uiPrice?.toFixed?.(1)),
-      row('Feed', latencyDelta?.feedPrice?.toFixed?.(1)),
-      row('External', latencyDelta?.externalPrice?.toFixed?.(1)),
+      '<div class="title">Entrada sugerida</div>',
+      row('Direção', edge.entryPlan?.limitDirection || '-', dirClass),
+      row('Preço limite', edge.entryPlan?.limitPrice ? `${edge.entryPlan.limitPrice}%` : '-', entryCss),
+      row('Faixa', edge.entryPlan?.limitPriceBand ? `${edge.entryPlan.limitPriceBand}%` : '-', entryCss),
+      `<div class="footer"><div class="row"><span class="muted">Leitura</span><span class="${entryCss}">${edge.entryPlan?.status || '-'}</span></div><div class="mini">${edge.entryPlan?.reason || 'Sem plano de entrada.'}</div></div>`,
+      '<div class="sep"></div>',
+      '<div class="title">Latência</div>',
+      row('Polymarket UI vs API', latencyDelta?.deltaUiVsFeed?.toFixed?.(2)),
+      row('API vs Binance/Coinbase', latencyDelta?.deltaFeedVsExternal?.toFixed?.(2)),
       row('UI Delay', fmtMs(latencyDelta?.uiDelayMs)),
-      row('Feed Freshness', fmtMs(latencyDelta?.feedFreshnessMs)),
-      row('External Freshness', fmtMs(latencyDelta?.externalFreshnessMs)),
-      row('Delta UI vs Feed', latencyDelta?.deltaUiVsFeed?.toFixed?.(2)),
-      row('Delta Feed vs External', latencyDelta?.deltaFeedVsExternal?.toFixed?.(2)),
-      row('Status', lagLabel, latencyTone(latencyDelta)),
-      row('Conflict', conflictLabel, latencyTone(latencyDelta)),
-      row('Confidence Adj', String(latencyDelta?.confidenceAdjustment ?? 0), (latencyDelta?.confidenceAdjustment ?? 0) < 0 ? 'danger' : 'good')
+      row('Feed freshness', fmtMs(latencyDelta?.feedFreshnessMs))
     ].join('');
   }
 
   function requestEdge() {
-    if (typeof GM_xmlhttpRequest === 'function') {
-      GM_xmlhttpRequest({
+    const xhr = getXmlHttpRequest();
+    if (xhr) {
+      xhr({
         method: 'GET',
         url: API,
         onload: (res) => {
@@ -236,6 +270,12 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
   }
 
   function connectRealtime() {
+    if (wsBlocked) return;
+    if (window.location.protocol === 'https:' && WS_API.startsWith('ws://')) {
+      wsBlocked = true;
+      return;
+    }
+
     try {
       ws = new WebSocket(WS_API);
       ws.onmessage = (ev) => {
@@ -245,6 +285,7 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
       };
       ws.onclose = () => setTimeout(connectRealtime, 1500);
       ws.onerror = () => {
+        wsBlocked = window.location.protocol === 'https:' && WS_API.startsWith('ws://');
         try { ws.close(); } catch {}
       };
     } catch {
@@ -252,21 +293,50 @@ ${String.raw`#aggressive-edge-overlay{position:fixed;top:88px;right:18px;width:3
     }
   }
 
-  const observer = new MutationObserver(() => {
-    trackDomUiPrice();
-  });
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  function mountOverlay() {
+    const styleInjector = getAddStyle()
+      ? getAddStyle()
+      : (css) => {
+        const style = document.createElement('style');
+        style.textContent = css;
+        (document.head || document.documentElement).appendChild(style);
+      };
+    styleInjector(CSS);
 
-  loadPosition();
-  enableDrag();
-  sendUiContext();
-  connectRealtime();
-  trackDomUiPrice();
-  requestEdge();
+    root = document.createElement('div');
+    root.id = 'aggressive-edge-overlay';
+    root.innerHTML = `<div class="head"><span>AGGRESSIVE EDGE</span><span class="muted">0.3.3</span></div><div class="body"><div class="muted">Carregando dados locais...</div></div>`;
+    document.body.appendChild(root);
+  }
 
-  setInterval(() => {
-    trackDomUiPrice();
+  function start() {
+    if (started || !document.body) return;
+    started = true;
+    mountOverlay();
+
+    const observer = new MutationObserver(() => {
+      trackDomUiPrice();
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    loadPosition();
+    enableDrag();
     sendUiContext();
+    connectRealtime();
+    trackDomUiPrice();
     requestEdge();
-  }, POLL_MS);
+
+    setInterval(() => {
+      trackDomUiPrice();
+      sendUiContext();
+      requestEdge();
+    }, POLL_MS);
+  }
+
+  if (document.body) {
+    start();
+  } else {
+    window.addEventListener('DOMContentLoaded', start, { once: true });
+    window.addEventListener('load', start, { once: true });
+  }
 })();

@@ -7,6 +7,9 @@ export function computeMomentum(prices = []) {
       delta5s: 0,
       delta10s: 0,
       acceleration: 0,
+      range10sPct: 0,
+      range15sPct: 0,
+      volatilityPct: 0,
       score: 0
     };
   }
@@ -31,8 +34,19 @@ export function computeMomentum(prices = []) {
   const delta10s = pct(ref10);
   const acceleration = delta2s - delta5s;
 
+  const window10s = prices.filter((entry) => entry.ts >= now - 10_000);
+  const window15s = prices.filter((entry) => entry.ts >= now - 15_000);
+  const latestSafe = latest || 1;
+  const high10s = window10s.reduce((acc, entry) => Math.max(acc, entry.price || 0), 0);
+  const low10s = window10s.reduce((acc, entry) => Math.min(acc, entry.price || Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
+  const high15s = window15s.reduce((acc, entry) => Math.max(acc, entry.price || 0), 0);
+  const low15s = window15s.reduce((acc, entry) => Math.min(acc, entry.price || Number.POSITIVE_INFINITY), Number.POSITIVE_INFINITY);
+  const range10sPct = Number.isFinite(low10s) ? ((high10s - low10s) / latestSafe) * 100 : 0;
+  const range15sPct = Number.isFinite(low15s) ? ((high15s - low15s) / latestSafe) * 100 : 0;
+  const volatilityPct = (range10sPct * 0.65) + (range15sPct * 0.35);
+
   const weighted = (delta2s * 0.45) + (delta5s * 0.35) + (delta10s * 0.2) + (acceleration * 0.25);
   const score = clamp(weighted * 35, -100, 100);
 
-  return { delta2s, delta5s, delta10s, acceleration, score };
+  return { delta2s, delta5s, delta10s, acceleration, range10sPct, range15sPct, volatilityPct, score };
 }

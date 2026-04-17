@@ -109,6 +109,7 @@ export class RuntimeState {
 
     const baseEdge = calculateAggressiveEdge({
       btcPrice,
+      externalPrice: this.external.price,
       impliedOdds,
       targetPrice: this.marketMeta.targetPrice,
       orderbook: this.orderbook,
