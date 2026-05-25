@@ -160,3 +160,153 @@ If sample count is too low, the next balanced version should remove the volatili
 - Logs are ignored by git and should not be committed directly.
 - This remains paper-only. The simulation uses top-of-book quotes and simple size caps, but does not model queue priority, partial fills beyond displayed size, latency, or exchange fees.
 - BTC and ETH should remain under broad monitoring but out of the focused paper strategy until they recover in the enriched sample.
+
+## Handoff For Polymarket Bot Tests
+
+The current `polymarket-bot` already has reversal-related code, but it is not the same setup.
+
+Existing reversal behavior in that project:
+
+- `reversal_sniper` and `reversal_scalp` focus on buying the cheap losing side when the current winner is already expensive.
+- The thesis is: the apparent winner may fail, so buy the loser cheaply.
+- Existing signals include BTC/oracle divergence, winner bid deceleration, loser momentum, and an Early Leader gate.
+- Much of the implementation is BTC-specific and uses `BTCUSDT`, Coinbase `BTC-USD`, and `btc-updown-5m-*` assumptions.
+
+The setup documented here is different:
+
+- It does not buy the old loser simply because the leader is expensive.
+- It first detects an Early Leader in the 240s to 181s window.
+- It then waits for the opposite side to become the new leader.
+- It buys the new leader after the inversion, treating the inversion as a directional continuation signal for the new leader.
+
+Copyable implementation request:
+
+```text
+Quero testar/adaptar o setup novo de Early Leader Inversion usando a infraestrutura do polymarket-bot.
+
+Contexto:
+O bot já tem reversal_sniper e reversal_scalp, mas eles operam outra tese: comprar o lado perdedor barato quando o winner está quase resolvido. Isso performou mal nos logs recentes quando simulado em ETH/SOL/XRP.
+
+O setup novo que quero implementar/testar é diferente:
+
+Nome sugerido:
+early_leader_inversion_v1
+
+Mercados:
+Crypto Up/Down 5m: inicialmente SOL e XRP. Manter BTC/ETH apenas como benchmark, não como foco inicial.
+
+Definição do Early Leader:
+- Janela de detecção: de 240s até 181s antes do fim.
+- Calcular o bid médio de UP e DOWN nessa janela.
+- O lado com maior bid médio é o early_leader.
+- Só considerar se early_leader_bid >= 0.55.
+
+Sinal de inversão:
+- Depois da janela de detecção, entre 180s e 60s antes do fim, observar se o lado oposto vira o novo líder.
+- new_leader = lado oposto ao early_leader.
+- Entrada quando:
+  - new_leader_bid >= 0.60
+  - new_leader_bid <= 0.72
+  - new_leader_bid >= old_leader_bid + 0.03
+  - entry ask do new_leader <= 0.78
+
+Tese:
+Quando o Early Leader inverte, o novo líder tende a resolver. A entrada é no novo líder, não no loser antigo. Isso é diferente do reversal_sniper clássico.
+
+Saída paper:
+- take profit quando bid do lado comprado >= 0.85
+- stop quando bid do lado comprado <= 0.45
+- sair perto do fim se faltar <= 5s
+- registrar PnL por shares: pnl = shares * exitBid - stake
+
+Sizing para simulação mínima:
+- comprar 5 cotas
+- mas se 5 cotas custarem menos de 1.00 USDC, usar stake mínimo de 1.00 USDC
+- stake = max(5 * entryAsk, 1.00)
+- shares = stake / entryAsk
+
+Campos extras obrigatórios no log:
+- asset
+- slug
+- observedAt
+- secondsToEnd
+- earlyLeader
+- earlyLeaderBid240
+- newLeader
+- oldLeaderBid
+- newLeaderBid
+- entryAsk
+- exitBid
+- reason
+- stake
+- shares
+- pnl
+- priceToBeat
+- spotPrice
+- distanceToBeatUsd
+- distanceToBeatBps
+- directionFromBeat
+- recentMoveBps
+- recentVolatilityBps
+- recentDirection
+
+Price-to-beat:
+- Para cada mercado 5m, o priceToBeat é o preço spot da Binance no início da janela do slug.
+- Exemplo slug: sol-updown-5m-1779732000 => abertura em Unix timestamp 1779732000.
+- Usar SOLUSDT, XRPUSDT, ETHUSDT, BTCUSDT conforme asset.
+
+Filtros a testar separadamente, não combinados no primeiro momento:
+1. time_only:
+   - assets SOL/XRP
+   - secondsToEnd <= 60
+
+2. distance_only:
+   - assets SOL/XRP
+   - abs(distanceToBeatBps) entre 2 e 5
+
+3. volatility_only:
+   - assets SOL/XRP
+   - recentVolatilityBps entre 0.5 e 1.5
+
+Depois testar combinações:
+- time + distance
+- time + volatility
+- distance + volatility
+- time + distance + volatility
+
+Resultados atuais da simulação externa:
+Com sizing mínimo de 5 cotas ou 1 USDC:
+- Melhor filtro isolado: distance_only, abs(distanceToBeatBps) 2-5
+  - 9 trades
+  - 8 wins / 1 loss
+  - stake 29.50 USDC
+  - PnL +8.10 USDC
+  - ROI +27.46%
+
+- time_only, secondsToEnd <= 60:
+  - 9 trades
+  - PnL +5.80
+  - ROI +19.97%
+
+- volatility_only, 0.5-1.5 bps:
+  - 16 trades
+  - PnL +9.70
+  - ROI +18.85%
+
+- Melhor combinação encontrada:
+  - SOL/XRP + secondsToEnd <= 60 + abs(distanceToBeatBps) 2-5
+  - 4 trades
+  - 4 wins / 0 losses
+  - PnL +5.00
+  - ROI +38.17%
+  - Amostra pequena, então não usar como único filtro ainda.
+
+Mercados:
+- SOL é o mais consistente entre coletas.
+- XRP teve melhor resultado bruto em alguns recortes.
+- BTC/ETH devem ficar em benchmark por enquanto.
+- DOGE/BNB devem ficar fora.
+
+Pedido:
+Verifique o estado atual do polymarket-bot e implemente/teste esse early_leader_inversion_v1 aproveitando a infraestrutura existente de logs/paper runners, mas parametrizando asset/symbol para não ficar BTC-hardcoded. Primeiro rodar paper/shadow, sem ordens reais.
+```
