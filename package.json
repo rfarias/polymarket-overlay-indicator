@@ -1,0 +1,44 @@
+{
+  "name": "polymarket-resolution-edge-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server/api.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server/api.js",
+    "scan": "tsx src/cli/scan.ts",
+    "collect": "tsx src/cli/collect.ts",
+    "monitor": "tsx src/cli/monitor.ts",
+    "universe": "tsx src/cli/universe.ts",
+    "search-markets": "tsx src/cli/searchMarkets.ts",
+    "wallet-scout": "tsx src/cli/walletScout.ts",
+    "wallet-inspect": "tsx src/cli/walletInspect.ts",
+    "btc-replay": "tsx src/cli/btcReplay.ts",
+    "btc-mine": "tsx src/cli/btcMine.ts",
+    "wallet-arb-audit": "tsx src/cli/walletArbAudit.ts",
+    "arb-monitor": "tsx src/cli/arbMonitor.ts",
+    "updown-legging-paper": "tsx src/cli/updownLeggingPaper.ts",
+    "el-inversion-paper": "tsx src/cli/earlyLeaderInversionPaper.ts",
+    "wallet-watch": "tsx src/cli/walletWatch.ts",
+    "copy-report": "tsx src/cli/copyReport.ts",
+    "copy-evaluate": "tsx src/cli/copyEvaluate.ts",
+    "verify": "tsx src/cli/verify.ts",
+    "sources": "tsx src/cli/sources.ts",
+    "paper": "tsx src/cli/paper.ts",
+    "report": "tsx src/cli/report.ts"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

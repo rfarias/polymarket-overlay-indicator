@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polymarket Resolution Edge Agent</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Resolution Edge Agent</h1>
+        <p>Public-source scanner, fair value estimates, and paper signals.</p>
+      </div>
+      <div class="actions">
+        <button id="scanBtn">Run Scan</button>
+        <button id="refreshBtn">Refresh</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="metrics" id="metrics"></section>
+      <section class="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Signal</th>
+              <th>Market</th>
+              <th>Source</th>
+              <th>Poly</th>
+              <th>Fair</th>
+              <th>Edge</th>
+              <th>Conf</th>
+              <th>Risk</th>
+              <th>Liquidity</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="10">Loading...</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
