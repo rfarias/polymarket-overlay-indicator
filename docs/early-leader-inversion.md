@@ -1,312 +1,557 @@
-# Early Leader Inversion Paper Results
+# Early Leader Inversion - metodologia de pesquisa
 
-Generated: 2026-05-25 13:54 BRT
+Atualizado em 2026-05-28.
 
-This note documents the crypto Up/Down 5m paper runner focused on Early Leader inversion.
+Este documento descreve o setup atual de pesquisa para mercados crypto Up/Down 5m da Polymarket. O objetivo e servir como material de transferencia para testes no `polymarket-bot`, mantendo a separacao entre tese, metodologia, parametros, logs e limitacoes.
 
-## Setup
+O setup e apenas paper/shadow. Ele nao executa ordens reais.
 
-The signal watches Polymarket crypto Up/Down 5m markets and:
+## Tese
 
-1. Detects the early leader in the 240s to 181s window before market end.
-2. Waits for the opposite side to become the new leader.
-3. Enters the new leader when the inversion is strong enough.
-4. Exits by take-profit, stop, or near-end condition.
+O mercado Up/Down 5m frequentemente escolhe um lado dominante cedo. O setup observa esse "early leader" e procura uma inversao posterior: se o lado oposto vira o novo lider perto do fim, o paper compra o novo lider, nao o antigo perdedor barato.
 
-Default paper parameters:
+Em outras palavras:
 
-- Stake: `10 USDC`
-- Early leader minimum bid: `0.55`
-- New leader bid: `0.60` to `0.72`
-- Flip gap: `0.03`
-- Max entry ask: `0.78`
-- Take profit bid: `0.85`
-- Stop bid: `0.45`
+- Primeiro identifica quem liderava entre 240s e 181s antes do fim.
+- Depois espera o lado oposto virar lider.
+- A entrada e no novo lider depois da inversao.
+- A tese e continuidade do novo lider apos a virada, nao mean reversion do lado perdedor.
 
-The enriched runner adds Binance spot context:
+Isso difere de um `reversal_sniper` classico. Aqui a compra nao e "o loser esta barato"; a compra e "o loser virou winner e a estrutura do book confirmou a inversao".
 
-- `priceToBeat`: spot price near the start of the 5m window.
-- `spotPrice`: current Binance spot price.
-- `distanceToBeatUsd`: current distance from price-to-beat in quote currency.
-- `distanceToBeatBps`: distance from price-to-beat in bps.
-- `directionFromBeat`: `Up`, `Down`, or `Flat` versus price-to-beat.
-- `recentMoveBps`: recent spot move over the local sample window.
-- `recentVolatilityBps`: standard deviation of recent spot returns in bps.
+## Universo
 
-## Log Files
+Mercados-alvo:
 
-Logs are local runtime artifacts and are ignored by git through `logs/`.
+- `SOL` e `XRP` sao o universo paper principal atual.
+- `BTC` e `ETH` ficam em `observe-only` para benchmark e comparacao de regime.
+- `DOGE` e `BNB` ficaram fora do preset atual por desempenho historico pior nas amostras iniciais.
 
-Relevant local logs:
-
-- `logs/el_inversion_paper_live_20260525_093259.jsonl`
-- `logs/el_inversion_enriched_v2_live_20260525_104458.jsonl`
-- `logs/el_inversion_sol_xrp_selective_20260525_134939.jsonl` once the focused runner has a loggable event
-
-The `.out.log` and `.err.log` files next to each JSONL contain process output and runtime errors.
-
-## Original Collection
-
-File: `logs/el_inversion_paper_live_20260525_093259.jsonl`
-
-Period captured in the partial report: 2026-05-25 09:37 to 13:54 BRT.
-
-Summary:
-
-| Metric | Value |
-| --- | ---: |
-| Exits | 69 |
-| Wins | 43 |
-| Losses | 26 |
-| Stake | 527.1715 USDC |
-| PnL | +20.7844 USDC |
-| ROI | +3.94% |
-
-By market:
-
-| Market | Trades | W/L | PnL | ROI |
-| --- | ---: | ---: | ---: | ---: |
-| XRP | 13 | 11/2 | +15.6948 | +18.22% |
-| SOL | 15 | 11/4 | +13.6831 | +11.78% |
-| ETH | 13 | 8/5 | +15.3719 | +14.46% |
-| BTC | 13 | 7/6 | -0.3797 | -0.29% |
-| DOGE | 10 | 4/6 | -11.5355 | -20.90% |
-| BNB | 5 | 2/3 | -12.0503 | -36.04% |
-
-Interpretation:
-
-- XRP and SOL are the best candidates in this partial sample.
-- ETH is positive in the broad run but weaker in the enriched run.
-- BTC is roughly flat to negative.
-- DOGE and BNB are negative and should stay out of the selective strategy for now.
-
-## Enriched V2 Collection
-
-File: `logs/el_inversion_enriched_v2_live_20260525_104458.jsonl`
-
-Period captured in the partial report: 2026-05-25 10:47 to 13:54 BRT.
-
-Summary:
-
-| Metric | Value |
-| --- | ---: |
-| Exits | 41 |
-| Wins | 22 |
-| Losses | 19 |
-| Stake | 340.7718 USDC |
-| PnL | -20.1227 USDC |
-| ROI | -5.91% |
-
-By market:
-
-| Market | Trades | W/L | PnL | ROI |
-| --- | ---: | ---: | ---: | ---: |
-| SOL | 10 | 7/3 | +8.0936 | +10.29% |
-| XRP | 7 | 5/2 | +3.2416 | +6.31% |
-| ETH | 7 | 3/4 | -7.4866 | -10.70% |
-| BTC | 8 | 3/5 | -10.2872 | -12.86% |
-| DOGE | 7 | 3/4 | -7.7826 | -18.12% |
-| BNB | 2 | 1/1 | -5.9014 | -33.15% |
-
-Interpretation:
-
-- SOL remains positive across both original and enriched samples.
-- XRP remains positive across both samples.
-- BTC and ETH should not be included in the focused strategy yet, but should remain in broad monitoring for regime checks.
-
-## Filter Mining
-
-The enriched log was used to test filters based on entry context.
-
-Useful partial filters:
-
-| Filter | Trades | W/L | PnL | ROI |
-| --- | ---: | ---: | ---: | ---: |
-| `secondsToEnd <= 60` | 12 | 10/2 | +18.8934 | +20.30% |
-| `abs(distanceToBeatBps) 2-5` | 7 | 6/1 | +13.5768 | +29.40% |
-| `recentVolatilityBps 0.5-1.5` | 20 | 12/8 | +5.5771 | +3.58% |
-| `secondsToEnd <= 60` and `abs(distanceToBeatBps) 2-5` | 4 | 4/0 | +8.4813 | +36.01% |
-| all three filters together | 1 | 1/0 | +2.0000 | +28.57% |
-
-Conclusion:
-
-- Requiring all three filters is too restrictive with the current sample size.
-- The strongest candidate is `secondsToEnd <= 60` plus `abs(distanceToBeatBps)` between `2` and `5`.
-- The volatility filter is useful as a secondary diagnostic, but should not be mandatory until more samples accumulate.
-
-## Focused Runner
-
-The current focused collection uses:
-
-```powershell
-npm.cmd run el-inversion-paper -- --seconds <until-2026-05-26-08:00-BRT> --poll-secs 2 --stake 10 --assets sol,xrp --max-seconds-to-end 60 --min-abs-distance-to-beat-bps 2 --max-abs-distance-to-beat-bps 5 --min-recent-volatility-bps 0.5 --max-recent-volatility-bps 1.5 --log-file logs\el_inversion_sol_xrp_selective_20260525_134939.jsonl
-```
-
-The first version is intentionally selective:
-
-- Assets: `SOL,XRP`
-- `secondsToEnd <= 60`
-- `abs(distanceToBeatBps)` between `2` and `5`
-- `recentVolatilityBps` between `0.5` and `1.5`
-
-If sample count is too low, the next balanced version should remove the volatility requirement and keep only:
-
-- Assets: `SOL,XRP`
-- `secondsToEnd <= 60`
-- `abs(distanceToBeatBps)` between `2` and `5`
-
-## Operational Notes
-
-- Logs are ignored by git and should not be committed directly.
-- This remains paper-only. The simulation uses top-of-book quotes and simple size caps, but does not model queue priority, partial fills beyond displayed size, latency, or exchange fees.
-- BTC and ETH should remain under broad monitoring but out of the focused paper strategy until they recover in the enriched sample.
-
-## Handoff For Polymarket Bot Tests
-
-The current `polymarket-bot` already has reversal-related code, but it is not the same setup.
-
-Existing reversal behavior in that project:
-
-- `reversal_sniper` and `reversal_scalp` focus on buying the cheap losing side when the current winner is already expensive.
-- The thesis is: the apparent winner may fail, so buy the loser cheaply.
-- Existing signals include BTC/oracle divergence, winner bid deceleration, loser momentum, and an Early Leader gate.
-- Much of the implementation is BTC-specific and uses `BTCUSDT`, Coinbase `BTC-USD`, and `btc-updown-5m-*` assumptions.
-
-The setup documented here is different:
-
-- It does not buy the old loser simply because the leader is expensive.
-- It first detects an Early Leader in the 240s to 181s window.
-- It then waits for the opposite side to become the new leader.
-- It buys the new leader after the inversion, treating the inversion as a directional continuation signal for the new leader.
-
-Copyable implementation request:
+Formato esperado do slug:
 
 ```text
-Quero testar/adaptar o setup novo de Early Leader Inversion usando a infraestrutura do polymarket-bot.
+sol-updown-5m-1779975600
+xrp-updown-5m-1779975600
+btc-updown-5m-1779975600
+eth-updown-5m-1779975600
+```
 
-Contexto:
-O bot já tem reversal_sniper e reversal_scalp, mas eles operam outra tese: comprar o lado perdedor barato quando o winner está quase resolvido. Isso performou mal nos logs recentes quando simulado em ETH/SOL/XRP.
+O timestamp Unix no slug representa o inicio da janela de 5 minutos. O fim teorico e `timestamp + 300s`.
 
-O setup novo que quero implementar/testar é diferente:
+## Pipeline atual
 
-Nome sugerido:
-early_leader_inversion_v1
+O runner `src/cli/earlyLeaderInversionPaper.ts` chama `EarlyLeaderInversionPaperService` e executa este fluxo:
 
-Mercados:
-Crypto Up/Down 5m: inicialmente SOL e XRP. Manter BTC/ETH apenas como benchmark, não como foco inicial.
+1. Monta os slugs Up/Down 5m atuais para os assets configurados.
+2. Busca mercados na Gamma API da Polymarket.
+3. Busca quotes top-of-book na CLOB API para os tokens Up e Down.
+4. Mantem amostras locais de bids por mercado.
+5. Calcula o early leader usando a janela de 240s a 181s antes do fim.
+6. Calcula contexto Binance spot e price-to-beat.
+7. Avalia se houve inversao conforme filtros.
+8. Em modo paper, abre uma posicao simulada.
+9. Em modo observe-only, registra `SIGNAL` sem abrir trade.
+10. Fecha posicoes por take profit, stop ou proximidade do fim.
+11. Grava tudo em JSONL local.
 
-Definição do Early Leader:
-- Janela de detecção: de 240s até 181s antes do fim.
-- Calcular o bid médio de UP e DOWN nessa janela.
-- O lado com maior bid médio é o early_leader.
-- Só considerar se early_leader_bid >= 0.55.
+Os mercados sao atualizados a cada 30s. As quotes sao consultadas no intervalo configurado por `--poll-secs`.
 
-Sinal de inversão:
-- Depois da janela de detecção, entre 180s e 60s antes do fim, observar se o lado oposto vira o novo líder.
-- new_leader = lado oposto ao early_leader.
-- Entrada quando:
-  - new_leader_bid >= 0.60
-  - new_leader_bid <= 0.72
-  - new_leader_bid >= old_leader_bid + 0.03
-  - entry ask do new_leader <= 0.78
+## Definicao do early leader
 
-Tese:
-Quando o Early Leader inverte, o novo líder tende a resolver. A entrada é no novo líder, não no loser antigo. Isso é diferente do reversal_sniper clássico.
+Para cada mercado, o runner guarda amostras com:
 
-Saída paper:
-- take profit quando bid do lado comprado >= 0.85
-- stop quando bid do lado comprado <= 0.45
-- sair perto do fim se faltar <= 5s
-- registrar PnL por shares: pnl = shares * exitBid - stake
+- `secondsToEnd`
+- `upBid`
+- `downBid`
 
-Sizing para simulação mínima:
-- comprar 5 cotas
-- mas se 5 cotas custarem menos de 1.00 USDC, usar stake mínimo de 1.00 USDC
-- stake = max(5 * entryAsk, 1.00)
-- shares = stake / entryAsk
+A janela de deteccao e:
 
-Campos extras obrigatórios no log:
-- asset
-- slug
-- observedAt
-- secondsToEnd
-- earlyLeader
-- earlyLeaderBid240
-- newLeader
-- oldLeaderBid
-- newLeaderBid
-- entryAsk
-- exitBid
-- reason
-- stake
-- shares
-- pnl
-- priceToBeat
-- spotPrice
-- distanceToBeatUsd
-- distanceToBeatBps
-- directionFromBeat
-- recentMoveBps
-- recentVolatilityBps
-- recentDirection
+```text
+240s >= secondsToEnd >= 181s
+```
 
-Price-to-beat:
-- Para cada mercado 5m, o priceToBeat é o preço spot da Binance no início da janela do slug.
-- Exemplo slug: sol-updown-5m-1779732000 => abertura em Unix timestamp 1779732000.
-- Usar SOLUSDT, XRPUSDT, ETHUSDT, BTCUSDT conforme asset.
+Dentro dessa janela:
 
-Filtros a testar separadamente, não combinados no primeiro momento:
-1. time_only:
-   - assets SOL/XRP
-   - secondsToEnd <= 60
+- calcula a media de `upBid`
+- calcula a media de `downBid`
+- o maior bid medio define `elLeader`
+- `elBid240` e o bid medio do lider
+- exige `elBid240 >= minEarlyLeaderBid`
 
-2. distance_only:
-   - assets SOL/XRP
-   - abs(distanceToBeatBps) entre 2 e 5
+Padrao atual:
 
-3. volatility_only:
-   - assets SOL/XRP
-   - recentVolatilityBps entre 0.5 e 1.5
+```text
+minEarlyLeaderBid = 0.55
+```
 
-Depois testar combinações:
+## Sinal de inversao
+
+Depois que o contexto esta pronto, o lado oposto ao early leader vira `newLeader`.
+
+Exemplo:
+
+- early leader: `Down`
+- new leader esperado: `Up`
+
+A inversao so e aceita quando:
+
+```text
+newLeaderBid >= minNewLeaderBid
+newLeaderBid <= maxNewLeaderBid
+newLeaderBid >= oldLeaderBid + minFlipGap
+entryAsk <= maxEntryAsk
+minSecondsToEnd <= secondsToEnd <= maxSecondsToEnd
+```
+
+Preset atual recomendado:
+
+```text
+minNewLeaderBid = 0.60
+maxNewLeaderBid = 0.72
+minFlipGap = 0.03
+maxEntryAsk = 0.65
+minSecondsToEnd = 15
+maxSecondsToEnd = 60
+```
+
+O limite `maxEntryAsk=0.65` e mais conservador do que a versao inicial (`0.78`). A ideia e evitar pagar caro demais por sinais que ja podem estar resolvidos no book.
+
+## Entrada paper
+
+No modo paper, o runner usa stake fixa solicitada e limita o preenchimento pelo tamanho visivel no melhor ask:
+
+```text
+requestedStake = options.stake
+tradeStake = min(requestedStake, entryAsk * entryBestAskSize)
+shares = tradeStake / entryAsk
+fillRatio = tradeStake / requestedStake
+```
+
+Padrao do preset atual:
+
+```text
+stake = 5 USDC
+```
+
+Se nao houver liquidez no melhor ask (`entryBestAskSize`) ou se o stake preenchivel for zero, a entrada e ignorada.
+
+Limitacao importante: isso modela apenas top-of-book. Nao modela fila, latencia real, derrapagem, cancelamento de ordem, varias camadas do book ou taxas.
+
+## Saida paper
+
+Uma posicao aberta e monitorada pelo bid do outcome comprado.
+
+Sai quando qualquer condicao abaixo ocorre:
+
+```text
+exitBid >= takeProfitBid
+exitBid <= stopBid
+secondsToEnd <= exitSecondsToEnd
+```
+
+Preset atual:
+
+```text
+takeProfitBid = 0.85
+stopBid = 0.55
+exitSecondsToEnd = 5
+```
+
+PnL paper:
+
+```text
+pnl = shares * exitBid - stake
+```
+
+O runner tambem registra excursao durante o trade:
+
+- melhor bid visto
+- pior bid visto
+- maior PnL visto
+- menor PnL visto
+- timestamps desses extremos
+
+## Contexto Binance spot
+
+O runner enriquece cada observacao com dados Binance.
+
+Para cada asset, usa:
+
+```text
+BTCUSDT
+ETHUSDT
+SOLUSDT
+XRPUSDT
+DOGEUSDT
+BNBUSDT
+```
+
+Campos principais:
+
+- `priceToBeat`: preco spot mais proximo do inicio da janela 5m.
+- `spotPrice`: preco spot atual.
+- `distanceToBeatUsd`: diferenca entre spot atual e price-to-beat.
+- `distanceToBeatBps`: distancia em bps contra price-to-beat.
+- `directionFromBeat`: `Up`, `Down` ou `Flat`.
+- `recentMoveBps`: movimento em bps na janela recente de 60s.
+- `recentVolatilityBps`: desvio padrao dos retornos recentes em bps.
+- `recentDirection`: direcao do spot na janela recente.
+
+Campos adicionais atuais:
+
+- movimentos spot em 10s, 30s, 60s e 120s
+- volatilidade spot em 10s, 30s, 60s e 120s
+- numero de cruzamentos do price-to-beat em 60s e 120s
+- segundos desde ultimo cruzamento do price-to-beat
+- estabilidade da direcao contra price-to-beat
+- candle atual de 1m e 5m: corpo, range, volume e posicao do fechamento
+- movimentos BTC/ETH de 60s e 300s como contexto macro
+- spread relativo do asset contra BTC e ETH
+
+Esses campos nao sao todos filtros obrigatorios. Eles existem para pesquisa posterior de regime.
+
+## Filtros de pesquisa
+
+Os filtros principais devem ser testados separadamente antes de combinar:
+
+1. Time window:
+
+```text
+assets = SOL,XRP
+15s <= secondsToEnd <= 60s
+```
+
+2. Distance to beat:
+
+```text
+abs(distanceToBeatBps) entre 2 e 5
+```
+
+3. Volatility:
+
+```text
+recentVolatilityBps entre 0.5 e 1.5
+```
+
+Combinacoes a testar:
+
+- time only
+- distance only
+- volatility only
 - time + distance
 - time + volatility
 - distance + volatility
 - time + distance + volatility
 
-Resultados atuais da simulação externa:
-Com sizing mínimo de 5 cotas ou 1 USDC:
-- Melhor filtro isolado: distance_only, abs(distanceToBeatBps) 2-5
-  - 9 trades
-  - 8 wins / 1 loss
-  - stake 29.50 USDC
-  - PnL +8.10 USDC
-  - ROI +27.46%
+O preset atual operacional usa time window e os thresholds de book, mas nao forca distancia/volatilidade por padrao. Os campos sao logados para mineracao posterior.
 
-- time_only, secondsToEnd <= 60:
-  - 9 trades
-  - PnL +5.80
-  - ROI +19.97%
+## Modos de execucao
 
-- volatility_only, 0.5-1.5 bps:
-  - 16 trades
-  - PnL +9.70
-  - ROI +18.85%
+Paper principal SOL/XRP:
 
-- Melhor combinação encontrada:
-  - SOL/XRP + secondsToEnd <= 60 + abs(distanceToBeatBps) 2-5
-  - 4 trades
-  - 4 wins / 0 losses
-  - PnL +5.00
-  - ROI +38.17%
-  - Amostra pequena, então não usar como único filtro ainda.
-
-Mercados:
-- SOL é o mais consistente entre coletas.
-- XRP teve melhor resultado bruto em alguns recortes.
-- BTC/ETH devem ficar em benchmark por enquanto.
-- DOGE/BNB devem ficar fora.
-
-Pedido:
-Verifique o estado atual do polymarket-bot e implemente/teste esse early_leader_inversion_v1 aproveitando a infraestrutura existente de logs/paper runners, mas parametrizando asset/symbol para não ficar BTC-hardcoded. Primeiro rodar paper/shadow, sem ordens reais.
+```bash
+npm run el-inversion-sol-xrp
 ```
+
+Equivalente ao preset:
+
+```bash
+tsx src/cli/earlyLeaderInversionPaper.ts --poll-secs 0.5 --stake 5 --assets sol,xrp --min-seconds-to-end 15 --max-seconds-to-end 60 --max-entry-ask 0.65 --stop-bid 0.55
+```
+
+Observe-only BTC/ETH:
+
+```bash
+npm run el-inversion-observe-btc-eth
+```
+
+Equivalente ao preset:
+
+```bash
+tsx src/cli/earlyLeaderInversionPaper.ts --observe-only --poll-secs 0.5 --stake 0 --assets btc,eth --min-seconds-to-end 15 --max-seconds-to-end 60 --max-entry-ask 0.65 --stop-bid 0.55
+```
+
+Analisador de logs:
+
+```bash
+npm run el-inversion-analyze -- --logs logs/arquivo.jsonl --stakes 1,5,10
+```
+
+O analisador resume:
+
+- total de linhas por log
+- `SKIP`, `SIGNAL`, `ENTRY`, `EXIT`
+- motivos de skip
+- sinais em observe-only
+- simulacao de exits com diferentes stakes quando ha trades fechados
+
+## Tipos de evento no JSONL
+
+`SKIP`:
+
+- Mercado observado, mas sem entrada.
+- Pode ser por `no_inversion`, `fetch failed`, distancia fora do filtro, volatilidade fora do filtro ou outro motivo.
+
+`SIGNAL`:
+
+- Sinal valido em `observe-only`.
+- Nao abre paper trade.
+- Usado para benchmark de assets fora do paper principal.
+
+`ENTRY`:
+
+- Entrada paper aberta.
+- Registra entry ask, liquidez, spread, stake preenchido, shares e contexto.
+
+`EXIT`:
+
+- Saida paper fechada.
+- Registra exit bid, PnL, motivo de saida e contexto de entrada/saida.
+
+## Campos minimos para portar ao polymarket-bot
+
+Para implementar no `polymarket-bot`, manter pelo menos estes campos:
+
+```text
+type
+observedAt
+marketId
+slug
+asset
+outcome
+secondsToEnd
+entrySecondsToEnd
+exitSecondsToEnd
+elLeader
+elBid240
+newLeader
+oldLeaderBid
+newLeaderBid
+flipGap
+entryAsk
+entryBestAskSize
+entryBestBid
+entrySpread
+entryTopLiquidity
+requestedStake
+stake
+fillRatio
+shares
+exitBid
+reason
+pnl
+priceToBeat
+spotPrice
+distanceToBeatUsd
+distanceToBeatBps
+directionFromBeat
+recentMoveBps
+recentVolatilityBps
+recentDirection
+```
+
+Campos recomendados para pesquisa de regime:
+
+```text
+newLeaderStableSeconds
+newLeaderBidMove5s
+newLeaderBidMove10s
+oldLeaderBidMove5s
+oldLeaderBidMove10s
+flipGapMove5s
+flipGapMove10s
+spotMoveBps10s
+spotMoveBps30s
+spotMoveBps60s
+spotMoveBps120s
+spotVolatilityBps10s
+spotVolatilityBps30s
+spotVolatilityBps60s
+spotVolatilityBps120s
+beatCrosses60s
+beatCrosses120s
+secondsSinceBeatCross
+directionStableSeconds
+candle1mBodyBps
+candle1mRangeBps
+candle1mVolume
+candle1mClosePosition
+candle5mBodyBps
+candle5mRangeBps
+candle5mVolume
+candle5mClosePosition
+btcMoveBps60s
+btcMoveBps300s
+ethMoveBps60s
+ethMoveBps300s
+assetVsBtcMoveBps60s
+assetVsEthMoveBps60s
+```
+
+## Resultados historicos relevantes
+
+Amostras antigas, ainda pequenas, indicaram:
+
+- SOL e XRP foram os melhores candidatos iniciais.
+- ETH foi positivo em algumas rodadas, mas menos estavel.
+- BTC ficou perto de flat/negativo.
+- DOGE e BNB performaram pior.
+
+Na coleta original de 2026-05-25:
+
+- 69 exits
+- 43 wins / 26 losses
+- PnL aproximado: `+20.78 USDC`
+- ROI aproximado: `+3.94%`
+
+Por asset nessa amostra:
+
+- XRP: `+18.22% ROI`
+- SOL: `+11.78% ROI`
+- ETH: `+14.46% ROI`
+- BTC: `-0.29% ROI`
+- DOGE: `-20.90% ROI`
+- BNB: `-36.04% ROI`
+
+Na coleta enriquecida v2 de 2026-05-25:
+
+- 41 exits
+- 22 wins / 19 losses
+- PnL aproximado: `-20.12 USDC`
+- ROI aproximado: `-5.91%`
+
+Por asset nessa amostra:
+
+- SOL: `+10.29% ROI`
+- XRP: `+6.31% ROI`
+- ETH: `-10.70% ROI`
+- BTC: `-12.86% ROI`
+- DOGE: `-18.12% ROI`
+- BNB: `-33.15% ROI`
+
+Interpretacao de pesquisa:
+
+- SOL manteve consistencia melhor entre as duas coletas.
+- XRP tambem ficou positivo nas duas.
+- BTC/ETH nao devem ser foco do preset principal sem nova evidencia.
+- O resultado ainda nao e conclusivo por tamanho de amostra, vies de horario e mudancas de regime.
+
+## Estado observado em 2026-05-28
+
+Processos ativos retomados apos travamento:
+
+- `el-inversion-sol-xrp` rodando por 24h em paper.
+- `el-inversion-observe-btc-eth` rodando por 24h em observe-only.
+
+Logs ativos:
+
+```text
+logs/el_inversion_sol_xrp_recommended_20260528_095822.jsonl
+logs/el_inversion_btc_eth_observe_20260528_095822.jsonl
+```
+
+Resumo parcial no momento da retomada:
+
+- SOL/XRP: 81 linhas, 0 entries, 0 exits, principal motivo `no_inversion`.
+- BTC/ETH observe: 49 linhas, 1 signal ETH, 0 exits, principal motivo `no_inversion`.
+
+Isso nao invalida o setup. Apenas mostra que o preset atual esta seletivo e pode ficar varios ciclos sem entrada.
+
+## Metodologia de pesquisa recomendada
+
+1. Rodar paper e observe-only por blocos longos, idealmente varios periodos de mercado.
+2. Separar logs por data, preset, assets e parametros.
+3. Nunca misturar resultados de presets diferentes sem etiquetar.
+4. Avaliar primeiro:
+   - numero de sinais
+   - taxa de entrada
+   - taxa de fechamento por take profit, stop e near-end
+   - ROI por asset
+   - ROI por faixa de `secondsToEnd`
+   - ROI por faixa de `entryAsk`
+   - ROI por `distanceToBeatBps`
+   - ROI por `recentVolatilityBps`
+5. Validar se o resultado sobrevive a:
+   - stake menor e maior
+   - liquidez real no melhor ask
+   - horarios diferentes
+   - dias diferentes
+   - assets diferentes
+6. So depois transformar filtro em regra operacional.
+
+## Hipoteses abertas
+
+Hipoteses a testar com os campos novos:
+
+- Sinais com `newLeaderStableSeconds` maior performam melhor.
+- Aceleracao positiva do `newLeaderBidMove5s` melhora entrada.
+- `flipGapMove5s` positivo evita inversoes falsas.
+- Distancia muito grande do price-to-beat ja pode estar precificada e piorar ROI.
+- Regime macro de BTC/ETH afeta SOL/XRP, mesmo em mercados especificos.
+- Candles 1m/5m com fechamento perto da maxima/minima filtram direcao melhor que `recentMoveBps`.
+- Muitos cruzamentos do price-to-beat indicam chop e pioram o setup.
+
+## Regras para portar ao polymarket-bot
+
+Nome sugerido:
+
+```text
+early_leader_inversion_v1
+```
+
+Requisitos de implementacao:
+
+- Parametrizar assets e simbolos; nao deixar BTC hardcoded.
+- Separar modo `paper`, `observe` e futura execucao real.
+- Manter log JSONL completo antes de qualquer trade real.
+- Usar slugs 5m para extrair start/end do mercado.
+- Calcular early leader por media de bid na janela 240s-181s.
+- Comprar somente o novo lider apos inversao confirmada.
+- Modelar stake com limite por liquidez visivel.
+- Registrar sinais rejeitados com motivo.
+- Permitir replay/analise por arquivo.
+
+Regra minima para primeiro teste no bot:
+
+```text
+assets = SOL,XRP
+minEarlyLeaderBid = 0.55
+minNewLeaderBid = 0.60
+maxNewLeaderBid = 0.72
+minFlipGap = 0.03
+maxEntryAsk = 0.65
+minSecondsToEnd = 15
+maxSecondsToEnd = 60
+takeProfitBid = 0.85
+stopBid = 0.55
+exitSecondsToEnd = 5
+paperStake = 5 USDC
+```
+
+BTC/ETH:
+
+```text
+observeOnly = true
+```
+
+## Limitacoes
+
+- A coleta e online; sem replay tick-by-tick completo do order book.
+- Top-of-book pode superestimar fills.
+- Nao ha modelagem de prioridade de fila.
+- Nao ha execucao real nem cancelamento.
+- Binance spot pode divergir da fonte de resolucao efetiva do mercado.
+- Resultados historicos sao amostras pequenas.
+- Mudancas de regime podem inverter o desempenho por asset.
+- Logs locais em `logs/` nao sao versionados pelo git.
+
+## Criterio para evoluir
+
+Antes de considerar qualquer execucao real:
+
+- Amostra maior por asset.
+- Resultado positivo fora do periodo original de mineracao.
+- Estabilidade em diferentes stakes simulados.
+- Queda aceitavel ao aplicar limite de liquidez.
+- Simulador com ordem, cancelamento, latencia e slippage.
+- Travas de risco: perda diaria, max trades, max exposicao por asset, kill switch e dry-run obrigatorio.

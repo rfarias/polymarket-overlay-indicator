@@ -85,6 +85,18 @@ O relatorio calcula mark-to-market com:
 - tamanho de amostra
 - classificacao simples de significancia
 
+Preset atual recomendado para o estudo Early Leader:
+
+```bash
+npm run el-inversion-sol-xrp
+```
+
+Esse preset roda apenas SOL/XRP em paper, com janela de 15-60s para o fim, `max-entry-ask=0.65` e `stop-bid=0.55`. BTC/ETH ficam fora do paper principal; para observar sinais sem abrir paper trade:
+
+```bash
+npm run el-inversion-observe-btc-eth
+```
+
 Sem snapshots posteriores a entrada, o trade fica sem avaliacao. Para gerar dados avaliaveis, rode `collect` continuamente por horas/dias e use `paper` depois.
 
 Para filtrar os sinais antes da verificacao detalhada:

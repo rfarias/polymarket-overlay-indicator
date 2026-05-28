@@ -9,13 +9,13 @@ const minEarlyLeaderBid = getNumberArg(args, "--min-early-leader-bid", 0.55);
 const minNewLeaderBid = getNumberArg(args, "--min-new-leader-bid", 0.6);
 const maxNewLeaderBid = getNumberArg(args, "--max-new-leader-bid", 0.72);
 const minFlipGap = getNumberArg(args, "--min-flip-gap", 0.03);
-const maxEntryAsk = getNumberArg(args, "--max-entry-ask", 0.78);
-const minSecondsToEnd = getNumberArg(args, "--min-seconds-to-end", 60);
-const maxSecondsToEnd = getNumberArg(args, "--max-seconds-to-end", 180);
+const maxEntryAsk = getNumberArg(args, "--max-entry-ask", 0.65);
+const minSecondsToEnd = getNumberArg(args, "--min-seconds-to-end", 15);
+const maxSecondsToEnd = getNumberArg(args, "--max-seconds-to-end", 60);
 const takeProfitBid = getNumberArg(args, "--take-profit-bid", 0.85);
-const stopBid = getNumberArg(args, "--stop-bid", 0.45);
+const stopBid = getNumberArg(args, "--stop-bid", 0.55);
 const exitSecondsToEnd = getNumberArg(args, "--exit-seconds-to-end", 5);
-const assets = getArgValue(args, "--assets", "btc,eth,sol,xrp,doge,bnb")!
+const assets = getArgValue(args, "--assets", "sol,xrp")!
   .split(",")
   .map((asset) => asset.trim().toLowerCase())
   .filter(Boolean);
@@ -25,6 +25,7 @@ const minRecentVolatilityBps = getNumberArg(args, "--min-recent-volatility-bps",
 const maxRecentVolatilityBps = getNumberArg(args, "--max-recent-volatility-bps", Number.POSITIVE_INFINITY);
 const logFile = getArgValue(args, "--log-file", `logs/el_inversion_paper_${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`)!;
 const json = hasFlag(args, "--json");
+const observeOnly = hasFlag(args, "--observe-only");
 
 const report = await new EarlyLeaderInversionPaperService().run({
   seconds,
@@ -45,7 +46,8 @@ const report = await new EarlyLeaderInversionPaperService().run({
   maxAbsDistanceToBeatBps,
   minRecentVolatilityBps,
   maxRecentVolatilityBps,
-  logFile
+  logFile,
+  observeOnly
 });
 
 if (json) {
@@ -59,6 +61,7 @@ if (json) {
     observations: report.observations,
     entries: report.entries,
     exits: report.exits,
+    mode: observeOnly ? "observe" : "paper",
     stake: report.stake.toFixed(2),
     pnl: report.pnl.toFixed(4),
     logFile: report.logFile
