@@ -5,3 +5,11 @@ dist/
 *.db-shm
 *.db-wal
 logs/
+data/raw-logs/
+data/collected-logs/
+data/research/*.duckdb
+data/research/*.duckdb-*
+*.jsonl
+*.jsonl.gz
+*.log
+*.log.gz
