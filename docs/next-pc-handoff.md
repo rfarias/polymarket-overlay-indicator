@@ -75,6 +75,7 @@ Scripts Python:
 - `scripts/fetch_gamma_btc5_metadata.py`
 - `scripts/evaluate_closed_logs_with_gamma.py`
 - `scripts/build_setup_dataset_from_logs.py`
+- `scripts/compare_setup_backtest_runs.py`
 
 ## Estado da base BTC 5m
 
@@ -195,6 +196,18 @@ Melhores setups com pelo menos 20 trades:
 - `lag_dominance_strong_move`: 74 trades, win rate 62,2%, EV/trade +0,0369, ROI 6,3%, PnL +2,73
 
 Observacao: o usuario mencionou 25 setups possiveis, mas o catalogo versionado atual tem 21. Faltam adicionar 4 definicoes ao catalogo se a meta operacional for testar 25.
+
+Comparador preparado para o outro PC:
+
+```bash
+python scripts/compare_setup_backtest_runs.py \
+  --base-dir research-output/setup-backtests/log-snapshots-gamma-binance-1s \
+  --candidate-dir research-output/setup-backtests/OUTRO_PC_RUN \
+  --output-dir research-output/setup-backtests/compare-local-vs-other-pc \
+  --min-trades 20
+```
+
+O comparador marca `survives=true` apenas quando um setup tem amostra minima, EV/trade positivo e PnL positivo nos dois runs.
 
 Familias:
 

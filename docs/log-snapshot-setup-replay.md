@@ -181,6 +181,36 @@ Leitura: muito seletivo. Bom candidato para observacao, ainda com pouca amostra.
    - `lag_dominance_strong_move_90_150`
    - `late_momentum_10s_dom_75_dist5_8_mom2_5`
 
+## Comparar Dois Runs
+
+Depois de rodar o replay no outro PC, compare contra o run local usando:
+
+```bash
+python scripts/compare_setup_backtest_runs.py \
+  --base-dir research-output/setup-backtests/log-snapshots-gamma-binance-1s \
+  --candidate-dir research-output/setup-backtests/OUTRO_PC_RUN \
+  --output-dir research-output/setup-backtests/compare-local-vs-other-pc \
+  --min-trades 20 \
+  --label-base local \
+  --label-candidate other-pc
+```
+
+Saidas:
+
+- `setup-run-comparison.md`
+- `setup-run-comparison.csv`
+- `setup-run-comparison.json`
+- `setup-run-period-comparison.csv`
+
+O campo `survives` exige:
+
+- pelo menos `--min-trades` no run base
+- pelo menos `--min-trades` no run candidato
+- EV/trade positivo nos dois
+- PnL total positivo nos dois
+
+Use esse relatorio para decidir quais setups continuam depois dos logs do outro PC.
+
 ## Limites
 
 - Binance 1s e proxy, nao fonte oficial Chainlink/Data Streams.
