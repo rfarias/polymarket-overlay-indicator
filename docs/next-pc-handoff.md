@@ -71,6 +71,10 @@ Scripts Python:
 - `scripts/build_btc5_research_db.py`
 - `scripts/import_btc5_parquet.py`
 - `scripts/import_polymarket_bot_logs.py`
+- `scripts/audit_consolidated_logs.py`
+- `scripts/fetch_gamma_btc5_metadata.py`
+- `scripts/evaluate_closed_logs_with_gamma.py`
+- `scripts/build_setup_dataset_from_logs.py`
 
 ## Estado da base BTC 5m
 
@@ -136,6 +140,61 @@ Resumo da auditoria:
 - Closed events: 517
 - Slugs: 4.570
 - Market IDs: 0
+
+Auditoria atualizada apos consolidacao ampliada em 2026-06-08:
+
+- Files discovered: 964
+- Files imported: 956
+- Duplicate files skipped: 8
+- Events imported: 882.166
+- Closed events: 517
+- Distinct slugs: 6.507
+- Distinct BTC 5m slugs nos logs: 4.622
+- Slugs que cruzam com `btc5_research.duckdb`: 0
+
+Conclusao: estes logs validam o pipeline e ajudam a mapear cobertura, mas ainda nao cruzam com os 616 mercados BTC 5m resolvidos usados nos backtests confiaveis.
+
+Metadata Gamma para slugs fechados ausentes da base BTC5 local:
+
+- Slugs BTC5 fechados solicitados: 261
+- Slugs encontrados na Gamma: 261
+- Resultados inferidos: 261
+- Com `priceToBeat` e `finalPrice`: 255
+- Eventos BTC5 fechados cruzados com Gamma: 517
+- Linhas com PnL parseavel: 278
+- PnL total paper parseavel: 18.48
+- PnL medio: 0.06647
+- Taxa de PnL positivo: 75.18%
+- Lado escolhido bateu resolucao Gamma: 84.17%
+
+Arquivos:
+
+- `research-output/gamma-btc5-metadata/gamma_btc5_closed_metadata.json`
+- `research-output/gamma-btc5-metadata/gamma_btc5_closed_metadata.csv`
+- `research-output/gamma-btc5-metadata/closed_paper_vs_gamma_trades.csv`
+- `research-output/gamma-btc5-metadata/closed_paper_vs_gamma_summary.md`
+
+Leitura: isso valida os logs fechados contra resultado final, mas ainda nao substitui uma base historica de book/odds para backtest robusto.
+
+Replay do catalogo de setups sobre snapshots dos logs:
+
+- Gamma all metadata: 4.622 slugs solicitados, 4.621 encontrados, 4.586 com `priceToBeat`
+- Dataset: `data/external-btc5/log-snapshots-gamma.binance-enriched.json`
+- Mercados: 4.586
+- Snapshots de odds: 166.833
+- Pontos BTC: 476.342
+- Catalogo atual: 21 setups em `src/strategies/setupBacktest/setupCatalog.ts`
+- Trades simulados: 4.804
+- Relatorio: `research-output/setup-backtests/log-snapshots-gamma-binance-1s/setup-backtest-report.md`
+
+Melhores setups com pelo menos 20 trades:
+
+- `late_momentum_10s_dom_75`: 41 trades, win rate 34,1%, EV/trade +0,0763, ROI 28,8%, PnL +3,13
+- `lag_continuation_10s_dom_cheap`: 127 trades, win rate 36,2%, EV/trade +0,0447, ROI 14,1%, PnL +5,68
+- `lag_continuation_30s_dom_cheap`: 144 trades, win rate 48,6%, EV/trade +0,0446, ROI 10,1%, PnL +6,42
+- `lag_dominance_strong_move`: 74 trades, win rate 62,2%, EV/trade +0,0369, ROI 6,3%, PnL +2,73
+
+Observacao: o usuario mencionou 25 setups possiveis, mas o catalogo versionado atual tem 21. Faltam adicionar 4 definicoes ao catalogo se a meta operacional for testar 25.
 
 Familias:
 
@@ -321,7 +380,7 @@ Deduplicacao:
 1. Fazer pull deste repo e abrir este documento.
 2. Copiar ou manter os logs locais do outro PC dentro de `data/raw-logs/other-pc/...`, sem commitar bruto.
 3. Compactar `*.jsonl` e `*.log` para `*.gz`, preservando um manifest por projeto.
-4. Rodar ou adaptar `scripts/import_polymarket_bot_logs.py` para aceitar multiplos `--source-dir`.
+4. Rodar `scripts/import_polymarket_bot_logs.py` com um ou mais `--source-dir`.
 5. Gerar um novo banco unificado:
 
 ```bash
@@ -332,7 +391,7 @@ python scripts/import_polymarket_bot_logs.py \
   --audit-output research-output/log-audit/consolidated_logs_audit.json
 ```
 
-6. Se o script atual ainda nao aceitar multiplos `--source-dir`, proxima tarefa e alterar o argparse para `action="append"` e unificar a varredura.
+6. Revisar o manifest gerado em `research-output/log-audit/consolidated_logs_manifest.csv` e confirmar duplicatas por `sha256_raw`.
 7. Criar tabelas canonicas:
 
 ```text
@@ -375,13 +434,13 @@ paper_or_real
 
 Importador de logs:
 
-- aceitar multiplos diretorios de origem
-- aceitar logs `.gz`
-- gerar manifest por arquivo
-- deduplicar por `sha256_raw`
+- aceitar multiplos diretorios de origem: feito
+- aceitar logs `.gz`: feito
+- gerar manifest por arquivo: feito
+- deduplicar por `sha256_raw`: feito
 - inferir familia de estrategia pelo caminho e pelo payload
 - preservar `payload_json`
-- criar tabelas separadas para paper e real
+- criar tabelas separadas para paper e real: estrutura inicial feita
 
 Banco:
 

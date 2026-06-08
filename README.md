@@ -83,6 +83,7 @@ O relatorio calcula mark-to-market com:
 
 - [Early Leader inversion crypto Up/Down](docs/early-leader-inversion.md): runner paper para inversao do lider inicial em mercados cripto 5m, com versao enriquecida por price-to-beat, distancia em bps e volatilidade recente.
 - [Exhaustion reversal backtest](docs/exhaustion-reversal-backtest.md): motor offline para testar reversoes por Z-Score, distancia ate o Price to Beat, volume de agressao, desaceleracao, odds baratas, slippage e latencia.
+- [Log snapshot setup replay](docs/log-snapshot-setup-replay.md): metodo para converter snapshots dos logs em dataset de replay, simular o catalogo de setups e comparar gates candidatos.
 - [Next PC handoff](docs/next-pc-handoff.md): estado da base consolidada, setups, logs e plano para continuar a unificacao de logs entre PCs sem inflar o Git.
 - tamanho de amostra
 - classificacao simples de significancia
