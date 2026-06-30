@@ -37,6 +37,7 @@
     "copy-evaluate": "tsx src/cli/copyEvaluate.ts",
     "verify": "tsx src/cli/verify.ts",
     "sources": "tsx src/cli/sources.ts",
+    "lag-continuation-paper": "tsx src/cli/lagContinuationPaper.ts",
     "paper": "tsx src/cli/paper.ts",
     "report": "tsx src/cli/report.ts"
   },
