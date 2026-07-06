@@ -19,6 +19,8 @@ export interface LagContinuationOptions {
   minMomentumBps: number;
   maxEntryAsk: number;
   exitSecondsToEnd: number;
+  excludeSecondsToEndMin: number;
+  excludeSecondsToEndMax: number;
   logFile: string;
 }
 
@@ -56,6 +58,13 @@ interface OpenTrade {
   momentumBps: number | undefined;
 }
 
+// Quanto tempo apos o fim nominal da janela (5min) esperar antes de liquidar
+// a posicao pelo resultado final da resolucao, quando nao ha bid ao vivo disponivel.
+const RESOLUTION_FALLBACK_SECS = 45;
+// A partir daqui, cada tentativa sem sucesso tambem gera um log SKIP visivel
+// (a posicao continua sendo tentada indefinidamente, nunca e abandonada em silencio).
+const RESOLUTION_WARN_SECS = 1200;
+
 export class LagContinuationPaperService {
   private readonly gamma = new GammaClient();
   private readonly clob = new ClobClient();
@@ -65,10 +74,11 @@ export class LagContinuationPaperService {
 
   async run(options: LagContinuationOptions): Promise<LagContinuationReport> {
     ensureDir(options.logFile);
+    const stateFile = path.join(path.dirname(options.logFile), "lag_continuation_open_state.json");
     const startedAt = new Date();
     let markets = await this.findBtcMarkets();
     let nextRefreshAt = 0;
-    const open = new Map<string, OpenTrade>();
+    const open = loadOpenState(stateFile);
     const done = new Set<string>();
     let observations = 0;
     let entries = 0;
@@ -76,18 +86,120 @@ export class LagContinuationPaperService {
     let totalStake = 0;
     let totalPnl = 0;
 
+    if (open.size > 0) {
+      appendJsonl(options.logFile, {
+        type: "RESUME",
+        observedAt: new Date().toISOString(),
+        openPositions: [...open.keys()]
+      });
+    }
+
     while (Date.now() - startedAt.getTime() < options.seconds * 1000) {
       if (Date.now() >= nextRefreshAt) {
         markets = await this.findBtcMarkets();
         nextRefreshAt = Date.now() + 30_000;
       }
 
+      const now = new Date().toISOString();
+
+      // Posicoes abertas sao monitoradas independentemente da lista de mercados
+      // ativos (findBtcMarkets exclui mercados com secs<=0), para nunca perder
+      // o rastro de uma posicao so porque ela caiu fora da janela de varredura.
+      for (const [key, existing] of [...open.entries()]) {
+        const secs = secondsToEnd(existing.market);
+        let closedNow = false;
+
+        try {
+          const { up, down } = await this.quoteMarket(existing.market);
+          const sideQuote = existing.side === "Up" ? up : down;
+          const exitBid = sideQuote.bestBid;
+          const shouldExit = secs === undefined || secs <= options.exitSecondsToEnd;
+          if (shouldExit && exitBid !== undefined) {
+            const tradePnl = existing.shares * exitBid - existing.stake;
+            totalPnl += tradePnl;
+            exits++;
+            open.delete(key);
+            done.add(key);
+            closedNow = true;
+            appendJsonl(options.logFile, {
+              type: "EXIT",
+              observedAt: now,
+              slug: existing.market.slug,
+              side: existing.side,
+              entryAsk: existing.entryAsk,
+              exitBid,
+              stake: existing.stake,
+              shares: existing.shares,
+              pnl: tradePnl,
+              secondsToEnd: secs,
+              holdSeconds: (Date.parse(now) - existing.openedAtMs) / 1000,
+              dominantSide: existing.dominantSide,
+              signedDistanceBps: existing.signedDistanceBps,
+              priceToBeat: existing.priceToBeat,
+              btcPriceAtEntry: existing.btcPriceAtEntry,
+              momentumBps: existing.momentumBps,
+              settledVia: "market"
+            });
+          }
+        } catch (error) {
+          appendJsonl(options.logFile, {
+            type: "SKIP",
+            observedAt: now,
+            slug: existing.market.slug,
+            reason: error instanceof Error ? error.message : String(error)
+          });
+        }
+
+        if (!closedNow && secs !== undefined && secs <= -RESOLUTION_FALLBACK_SECS) {
+          const settled = await this.settleViaResolution(existing).catch(() => undefined);
+          if (settled) {
+            totalPnl += settled.pnl;
+            exits++;
+            open.delete(key);
+            done.add(key);
+            appendJsonl(options.logFile, {
+              type: "EXIT",
+              observedAt: now,
+              slug: existing.market.slug,
+              side: existing.side,
+              entryAsk: existing.entryAsk,
+              exitBid: settled.resolvedPrice,
+              stake: existing.stake,
+              shares: existing.shares,
+              pnl: settled.pnl,
+              secondsToEnd: secs,
+              holdSeconds: (Date.parse(now) - existing.openedAtMs) / 1000,
+              dominantSide: existing.dominantSide,
+              signedDistanceBps: existing.signedDistanceBps,
+              priceToBeat: existing.priceToBeat,
+              btcPriceAtEntry: existing.btcPriceAtEntry,
+              momentumBps: existing.momentumBps,
+              settledVia: "resolution"
+            });
+          } else if (secs <= -RESOLUTION_WARN_SECS) {
+            appendJsonl(options.logFile, {
+              type: "SKIP",
+              observedAt: now,
+              slug: existing.market.slug,
+              reason: "resolution_pending_too_long"
+            });
+          }
+        }
+      }
+
+      saveOpenState(stateFile, open);
+
+      // Varredura de entrada: so considera mercados que ainda estao no universo
+      // ativo e que nao tem posicao aberta nem ja foram operados nesta sessao.
+      const scanMarkets = markets.filter((market) => {
+        const key = market.marketId || market.slug;
+        return !open.has(key) && !done.has(key);
+      });
       const rows = await Promise.all(
-        markets.map((market) =>
+        scanMarkets.map((market) =>
           this.quoteMarket(market).catch((error: unknown) => ({ market, error }))
         )
       );
-      const now = new Date().toISOString();
 
       for (const row of rows) {
         if ("error" in row) {
@@ -105,41 +217,6 @@ export class LagContinuationPaperService {
         const key = market.marketId || market.slug;
         const secs = secondsToEnd(market);
         const btcCtx = await this.btcContext(market).catch(() => undefined);
-        const existing = open.get(key);
-
-        if (existing) {
-          const sideQuote = existing.side === "Up" ? up : down;
-          const exitBid = sideQuote.bestBid;
-          const shouldExit = secs === undefined || secs <= options.exitSecondsToEnd;
-          if (shouldExit && exitBid !== undefined) {
-            const tradePnl = existing.shares * exitBid - existing.stake;
-            totalPnl += tradePnl;
-            exits++;
-            open.delete(key);
-            done.add(key);
-            appendJsonl(options.logFile, {
-              type: "EXIT",
-              observedAt: now,
-              slug: market.slug,
-              side: existing.side,
-              entryAsk: existing.entryAsk,
-              exitBid,
-              stake: existing.stake,
-              shares: existing.shares,
-              pnl: tradePnl,
-              secondsToEnd: secs,
-              holdSeconds: (Date.parse(now) - existing.openedAtMs) / 1000,
-              dominantSide: existing.dominantSide,
-              signedDistanceBps: existing.signedDistanceBps,
-              priceToBeat: existing.priceToBeat,
-              btcPriceAtEntry: existing.btcPriceAtEntry,
-              momentumBps: existing.momentumBps
-            });
-          }
-          continue;
-        }
-
-        if (done.has(key)) continue;
 
         const signal = evaluateSignal(market, up, down, secs, btcCtx, options);
         if (!signal.ok) continue;
@@ -169,6 +246,7 @@ export class LagContinuationPaperService {
           btcPriceAtEntry: signal.btcPrice,
           momentumBps: signal.momentumBps
         });
+        saveOpenState(stateFile, open);
 
         appendJsonl(options.logFile, {
           type: "ENTRY",
@@ -201,6 +279,18 @@ export class LagContinuationPaperService {
       pnl: totalPnl,
       logFile: options.logFile
     };
+  }
+
+  private async settleViaResolution(
+    existing: OpenTrade
+  ): Promise<{ pnl: number; resolvedPrice: number } | undefined> {
+    const outcome = await this.gamma.fetchResolvedOutcome(existing.market.slug);
+    if (!outcome || !outcome.closed) return undefined;
+    const idx = outcome.outcomes.indexOf(existing.side);
+    if (idx < 0 || outcome.outcomePrices[idx] === undefined) return undefined;
+    const resolvedPrice = outcome.outcomePrices[idx];
+    const pnl = existing.shares * resolvedPrice - existing.stake;
+    return { pnl, resolvedPrice };
   }
 
   private async btcContext(market: MarketSummary): Promise<BtcContext> {
@@ -271,6 +361,11 @@ function evaluateSignal(
   if (secs === undefined || secs < options.minSecondsToEnd || secs >= options.maxSecondsToEnd) {
     return { ok: false };
   }
+  // Zona morta identificada empiricamente (2026-07-06, n=22): secs 75-90 e a unica
+  // faixa de secondsToEnd com PnL agregado negativo (WR 40.9%, -14.21 vs +372 no resto).
+  if (secs >= options.excludeSecondsToEndMin && secs < options.excludeSecondsToEndMax) {
+    return { ok: false };
+  }
   if (!btcCtx || btcCtx.btcPrice === undefined || btcCtx.priceToBeat === undefined) {
     return { ok: false };
   }
@@ -338,4 +433,22 @@ function appendJsonl(file: string, row: unknown): void {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Persistencia das posicoes abertas em disco: sobrevive a reinicios do watchdog
+// (que mata o processo a cada ciclo/hora), evitando perder o rastro de trades
+// que ainda nao foram liquidados quando o processo e encerrado.
+function loadOpenState(stateFile: string): Map<string, OpenTrade> {
+  try {
+    const raw = fs.readFileSync(stateFile, "utf8");
+    const parsed = JSON.parse(raw) as Array<[string, OpenTrade]>;
+    return new Map(parsed);
+  } catch {
+    return new Map();
+  }
+}
+
+function saveOpenState(stateFile: string, open: Map<string, OpenTrade>): void {
+  ensureDir(stateFile);
+  fs.writeFileSync(stateFile, JSON.stringify([...open.entries()]));
 }

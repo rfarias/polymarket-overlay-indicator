@@ -14,6 +14,9 @@ const momentumWindowSec = getNumberArg(args, "--momentum-window-sec", 30);
 const minMomentumBps = getNumberArg(args, "--min-momentum-bps", 4);
 const maxEntryAsk = getNumberArg(args, "--max-entry-ask", 0.70);
 const exitSecondsToEnd = getNumberArg(args, "--exit-seconds-to-end", 5);
+// gate adicionado em 2026-07-06: zona secs[75,90) e a unica faixa com PnL negativo
+const excludeSecondsToEndMin = getNumberArg(args, "--exclude-seconds-to-end-min", 75);
+const excludeSecondsToEndMax = getNumberArg(args, "--exclude-seconds-to-end-max", 90);
 const logFile = getArgValue(
   args,
   "--log-file",
@@ -32,6 +35,8 @@ const report = await new LagContinuationPaperService().run({
   minMomentumBps,
   maxEntryAsk,
   exitSecondsToEnd,
+  excludeSecondsToEndMin,
+  excludeSecondsToEndMax,
   logFile
 });
 
